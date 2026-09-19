@@ -1,4 +1,3 @@
-import json
 
 import pytest
 
@@ -70,15 +69,3 @@ def test_close_position_refuses_already_closed(conn):
     db.close_position(conn, "pt_1", "2026-09-15", 125.0)
     assert db.close_position(conn, "pt_1", "2026-09-16", -400.0) is False
     assert db.list_positions(conn)[0]["close_pnl"] == 125.0
-
-
-def test_import_papers_json_copies_trades_once(conn, tmp_path):
-    p = tmp_path / "papers.json"
-    p.write_text(json.dumps({"trades": [_trade("a"), _trade("b")]}))
-    assert db.import_papers_json(conn, str(p)) == 2
-    assert db.import_papers_json(conn, str(p)) == 0
-    assert len(db.list_positions(conn)) == 2
-
-
-def test_import_papers_json_missing_file_is_zero(conn, tmp_path):
-    assert db.import_papers_json(conn, str(tmp_path / "nope.json")) == 0

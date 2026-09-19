@@ -22,29 +22,42 @@ single process on one port.
 
 ## Backend
 
-`backend/theta/` is one package, grouped by what each part talks to.
+`backend/theta/` is one package. The modules at its root are the shared
+foundation; the subpackages are grouped by what each one talks to.
+
+| Module | Responsibility | Talks to |
+|---|---|---|
+| `config` | Reads `.env` into the environment at startup | filesystem |
+| `paths` | Where the database and caches live | — |
+| `stats` | Percentile rank; the one definition of "rank" | — |
+| `strategy` | Indicators, gate verdicts, spread construction | — |
+| `signals` | A live signal: market data through the gates | market, strategy |
+| `paper` | Marking the paper book to model | market |
+| `credentials` | Which setting stands in for which environment variable | — |
+| `context` | Per-process state: database, broker, threads | storage |
+| `services` | Wires the engine and monitor to the outside world | most of the above |
+| `notify` | Telegram alerts, AI trade review | HTTP |
+| `mcp_server` | Read-only market data over MCP | market |
 
 | Package | Responsibility | Talks to |
 |---|---|---|
-| `config` | Reads `.env` into the environment at startup | filesystem |
-| `context` | Holds per-process state: db path, broker, runner, monitor | — |
 | `market/` | Quotes, klines, option chains, IV, pricing, rate limiting | OpenD |
-| `broker/` | Orders, account, position management, settlement | OpenD |
 | `storage/` | SQLite: positions, paper trades, settings, journal, edge table | disk |
+| `broker/` | Orders, account, position management, settlement | OpenD |
 | `engine/` | Gate pipeline, scan loop, position monitor, auto-trade | market, broker, storage |
-| `notify` | Telegram alerts, AI trade review | HTTP |
-| `research/` | Backtest and aggregate statistics | market |
+| `research/` | Backtest and aggregate statistics | market, strategy |
 | `api/` | Flask blueprints | everything above |
-| `mcp_server` | Read-only market data over MCP | market |
 
-Dependencies point downward only. `market/` and `storage/` know nothing about
-`engine/`; `engine/` knows nothing about `api/`.
+Dependencies point downward only. `strategy` and `stats` are pure and import
+nothing of ours; `market/` and `storage/` know nothing about `engine/`; nothing
+below `api/` knows that Flask exists.
 
 ### Application state
 
 The server has four pieces of mutable process state: the database path, the
 broker client, the scan runner and the position monitor. These live in an
-`AppContext` built once in `create_app()` and stored on `app.extensions`.
+`AppContext` built once and stored on `app.extensions`, which blueprints reach
+through `ctx()`.
 
 Blueprints reach it through `current_app`. Tests construct one directly:
 
@@ -70,6 +83,9 @@ Blueprints map one-to-one onto screens in the UI.
 | `surfaces` | `/api/payoff`, `/api/iv-surface` |
 | `settings` | `/api/settings*`, `/api/ai/*`, `/api/learn`, `/api/alert/telegram` |
 | `web` | `/`, `/assets/<path>` |
+
+`api/streams.py` holds the two server-sent-event generators. Only the narration
+lives there; the computation stays in `signals` and `research`.
 
 Long-running work streams over server-sent events rather than blocking a
 request: scans and backtests both report progress that way.
@@ -100,8 +116,10 @@ tracked.
 ## Running it
 
 `./run.sh` creates the virtualenv, installs both dependency sets, runs the test
-suites, builds the UI and starts the server. See the README for the short
-version.
+suites, builds the UI and starts the server. It ends in `python -m theta`, which
+loads `.env`, opens the database, starts the engine and monitor threads and
+serves the app. Importing `theta.api` never starts a thread, so tests get an app
+without one.
 
 OpenD must be running and logged in for anything that touches live data. Without
 it the UI still loads and the paper book still works; live endpoints return an

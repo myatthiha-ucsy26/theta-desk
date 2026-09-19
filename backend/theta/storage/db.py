@@ -1,8 +1,8 @@
 """SQLite storage for the engine. stdlib sqlite3 only, no ORM.
 
 One file holds positions, settings, the decision journal, alert history and the
-nightly edge table. Transactional writes replace papers.json, whose
-read-modify-write pattern could silently drop a trade under concurrent requests.
+nightly edge table. Writes are transactional, so a trade cannot be lost to a
+read-modify-write race between a request and the engine thread.
 
 Every function takes an open connection, so callers (Flask requests, the engine
 thread, tests) each own their connection and nothing is shared across threads.
@@ -155,7 +155,7 @@ DEFAULT_SETTINGS = {
     "ai_model": "",
     "telegram_bot_token": "",
     "telegram_chat_id": "",
-    # Live autotrade (mode "auto"). See docs/superpowers/specs/2026-09-17-live-autotrade-design.md.
+    # Live autotrade, used only while mode is "auto".
     "tp_pct": 50.0,
     "sl_multiple": 2.0,
     "min_credit": 0.30,
@@ -224,25 +224,6 @@ def close_position(conn, position_id, close_date, close_pnl):
     )
     conn.commit()
     return cur.rowcount == 1
-
-
-def import_papers_json(conn, path):
-    """Copy trades from a legacy papers.json. Existing ids are skipped.
-
-    Returns the number of trades newly imported, so running it twice imports 0.
-    """
-    if not os.path.exists(path):
-        return 0
-    with open(path) as f:
-        trades = json.load(f).get("trades", [])
-    added = 0
-    for t in trades:
-        try:
-            insert_position(conn, t)
-            added += 1
-        except ValueError:
-            pass
-    return added
 
 
 def get_settings(conn):

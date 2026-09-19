@@ -1,7 +1,7 @@
 """Live autotrade rules. Pure: no IO and no clock -- every input is passed in.
 
-monitor carries these decisions out through broker. Spec:
-docs/superpowers/specs/2026-09-17-live-autotrade-design.md
+Deciding what should happen and making it happen are kept apart: this module
+only decides, and monitor carries the decisions out through the broker.
 """
 import datetime as dt
 import math
