@@ -2,7 +2,6 @@ import pandas as pd
 import pytest
 from futu import ModifyOrderOp, TimeInForce, TrdEnv, TrdSide
 
-from theta.broker import client as broker
 from theta.broker.client import Broker, BrokerError
 
 
