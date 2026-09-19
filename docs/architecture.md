@@ -32,7 +32,7 @@ single process on one port.
 | `broker/` | Orders, account, position management, settlement | OpenD |
 | `storage/` | SQLite: positions, paper trades, settings, journal, edge table | disk |
 | `engine/` | Gate pipeline, scan loop, position monitor, auto-trade | market, broker, storage |
-| `notify/` | Telegram alerts, AI trade review | HTTP |
+| `notify` | Telegram alerts, AI trade review | HTTP |
 | `research/` | Backtest and aggregate statistics | market |
 | `api/` | Flask blueprints | everything above |
 | `mcp_server` | Read-only market data over MCP | market |
