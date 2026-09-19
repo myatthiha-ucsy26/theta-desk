@@ -115,11 +115,17 @@ tracked.
 
 ## Running it
 
-`./run.sh` creates the virtualenv, installs both dependency sets, runs the test
-suites, builds the UI and starts the server. It ends in `python -m theta`, which
-loads `.env`, opens the database, starts the engine and monitor threads and
-serves the app. Importing `theta.api` never starts a thread, so tests get an app
-without one.
+`setup.sh` installs; `run.sh` runs. The split is so that the everyday path does
+not re-check a toolchain that has not changed.
+
+`run.sh` starts two processes: the desk on 5057 and the MCP server on 5058. Both
+are background children of the script, which then waits on the desk. Waiting
+rather than exec-ing is what lets a signal reach the script so its trap can take
+the other one down; exec-ing would leave the MCP server orphaned.
+
+The desk itself is `python -m theta`, which loads `.env`, opens the database,
+starts the engine and monitor threads and serves the app. Importing `theta.api`
+never starts a thread, so the tests get an app without one.
 
 OpenD must be running and logged in for anything that touches live data. Without
 it the UI still loads and the paper book still works; live endpoints return an

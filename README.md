@@ -22,19 +22,29 @@ endpoint you configure.
 ```bash
 git clone <this repo> theta-desk
 cd theta-desk
-cp .env.example .env     # optional: Telegram and AI review credentials
-./run.sh
+./setup.sh      # once: virtualenv, dependencies, .env
+./run.sh        # every time: tests, UI build, then serve
 ```
 
-`run.sh` creates the virtualenv, installs both dependency sets, runs both test
-suites, builds the UI and serves it at <http://127.0.0.1:5057>.
+`setup.sh` checks you have Python 3.11 and Node 20+, creates `backend/.venv`,
+installs the backend (app, tests and MCP server) and the frontend, and copies
+`.env.example` to `.env` if you have no `.env` yet. Re-running it is safe;
+`./setup.sh --force` rebuilds the virtualenv and `node_modules` from scratch.
 
-Useful variants:
+`run.sh` runs both test suites, builds the UI if it is stale, then starts the
+desk on <http://127.0.0.1:5057> and the MCP market-data server on
+<http://127.0.0.1:5058/mcp>. Ctrl-C stops both.
 
-```bash
-./run.sh --skip-tests    # skip the test gate
-PORT=8000 ./run.sh       # serve on another port
-```
+| | |
+|---|---|
+| `./run.sh --dev` | also run Vite on 5173 with hot reload |
+| `./run.sh --skip-tests` | skip the test gate |
+| `./run.sh --no-mcp` | do not start the MCP server |
+| `./run.sh --no-open` | do not open a browser |
+| `PORT=8000 ./run.sh` | serve the desk on another port (`MCP_PORT` likewise) |
+
+It refuses to start if a port it needs is already taken, rather than failing
+halfway.
 
 ## Layout
 
@@ -48,13 +58,14 @@ docs/        architecture notes and the strategy spec
 
 ## Working on it
 
-```bash
-# backend
-cd backend && .venv/bin/python -m pytest
+`./run.sh --dev` is the loop to use: the API on 5057, and Vite on 5173 with hot
+reload proxying `/api` to it. Open 5173, not 5057.
 
-# frontend: unit tests, and a dev server that proxies /api to :5057
+To run the suites on their own:
+
+```bash
+cd backend && .venv/bin/python -m pytest
 cd frontend && npm test
-cd frontend && npm run dev
 ```
 
 The engine and the live bot are off by default. `engine_enabled` starts
@@ -78,13 +89,16 @@ the file, and credentials saved in the Settings screen win over both.
 
 The same OpenD quote path is exposed as an MCP server, so quotes, expirations
 and option chains can be queried outside the dashboard. It is read-only and
-places no orders.
+places no orders. `setup.sh` installs it.
 
-```bash
-cd backend && .venv/bin/python -m pip install -e ".[mcp]"
+`run.sh` serves it over HTTP at <http://127.0.0.1:5058/mcp>:
+
+```json
+{ "moomoo": { "type": "http", "url": "http://127.0.0.1:5058/mcp" } }
 ```
 
-Then point your MCP client at:
+Clients that would rather launch the server themselves can use stdio instead,
+which needs nothing running:
 
 ```json
 {

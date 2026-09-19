@@ -8,8 +8,17 @@ Every request goes through theta.market.data, which means it shares this
 project's OpenD rate limiters rather than competing with the engine for the
 same quota.
 
-Run with:  python -m theta.mcp_server
+Two ways to run it:
+
+    python -m theta.mcp_server                 stdio, for a client that spawns it
+    python -m theta.mcp_server --http          a service on 127.0.0.1:5058/mcp
+
+stdio is the default because that is how most clients expect to launch a
+server: they start the process themselves and talk over the pipe. The HTTP
+transport is for running it alongside the desk as a long-lived service.
 """
+import argparse
+
 from mcp.server.mcpserver import MCPServer
 
 from theta.market import data
@@ -105,5 +114,22 @@ def _round(v, dp):
     return round(float(v), dp) if v is not None else None
 
 
+DEFAULT_HTTP_PORT = 5058
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Read-only OpenD market data over MCP.")
+    parser.add_argument("--http", action="store_true",
+                        help="serve over HTTP instead of stdio")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=DEFAULT_HTTP_PORT)
+    args = parser.parse_args(argv)
+
+    if args.http:
+        mcp.run("streamable-http", host=args.host, port=args.port)
+    else:
+        mcp.run()
+
+
 if __name__ == "__main__":
-    mcp.run()
+    main()
