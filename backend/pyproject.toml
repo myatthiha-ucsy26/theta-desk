@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest==9.1.1"]
-mcp = ["mcp>=1.0"]
+mcp = ["mcp>=2.2"]
 
 [tool.setuptools.packages.find]
 include = ["theta*"]

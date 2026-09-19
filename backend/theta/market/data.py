@@ -62,7 +62,7 @@ def _call(method, *args, **kwargs):
         _retry_sleep(limiter.window)
 
 
-def _norm(sym: str) -> str:
+def norm(sym: str) -> str:
     sym = sym.strip().upper()
     return sym if "." in sym else f"US.{sym}"
 
@@ -81,7 +81,7 @@ def fetch_klines(ticker: str, start: str, end: str, refresh: bool = False) -> pd
             return df[(df["date"] >= pd.Timestamp(start)) & (df["date"] <= pd.Timestamp(end))].reset_index(drop=True)
 
     ret, k, _ = _call("request_history_kline",
-        _norm(ticker), start=start, end=end, ktype=KLType.K_DAY, max_count=1500)
+        norm(ticker), start=start, end=end, ktype=KLType.K_DAY, max_count=1500)
     if ret != RET_OK:
         raise RuntimeError(f"OpenD kline error for {ticker}: {k}")
     df = pd.DataFrame({
@@ -104,7 +104,7 @@ def recent_klines(ticker: str, bars: int = 120) -> pd.DataFrame:
     # truncates the recent end when the window holds more trading days than `bars`,
     # leaving a stale last close. Cover the whole window, then keep the latest `bars`.
     ret, k, _ = _call("request_history_kline",
-        _norm(ticker), start=start, end=end.strftime("%Y-%m-%d"),
+        norm(ticker), start=start, end=end.strftime("%Y-%m-%d"),
         ktype=KLType.K_DAY, max_count=bars * 2)
     if ret != RET_OK:
         raise RuntimeError(f"OpenD kline error for {ticker}: {k}")
@@ -117,7 +117,7 @@ def recent_klines(ticker: str, bars: int = 120) -> pd.DataFrame:
 
 
 def get_spot(ticker: str) -> float:
-    ret, snap = _call("get_market_snapshot", [_norm(ticker)])
+    ret, snap = _call("get_market_snapshot", [norm(ticker)])
     if ret != RET_OK:
         raise RuntimeError(f"OpenD snapshot error: {snap}")
     return float(snap.iloc[0]["last_price"])
@@ -125,7 +125,7 @@ def get_spot(ticker: str) -> float:
 
 def pick_expiration(ticker: str, dte_target: int):
     """Nearest available expiration to dte_target days out. Returns (exp_str, dte_int)."""
-    ret, e = _call("get_option_expiration_date", code=_norm(ticker))
+    ret, e = _call("get_option_expiration_date", code=norm(ticker))
     if ret != RET_OK or len(e) == 0:
         raise RuntimeError(f"OpenD expiration error: {e}")
     e = e.copy()
@@ -133,6 +133,35 @@ def pick_expiration(ticker: str, dte_target: int):
     e["d"] = (e["option_expiry_date_distance"] - dte_target).abs()
     r = e.sort_values("d").iloc[0]
     return r["strike_time"], int(r["option_expiry_date_distance"])
+
+
+def snapshot(codes):
+    """Raw OpenD snapshot rows for any codes: underlyings or option contracts."""
+    ret, s = _call("get_market_snapshot", list(codes))
+    if ret != RET_OK:
+        raise RuntimeError(f"OpenD snapshot error: {s}")
+    return s
+
+
+def expirations(ticker: str):
+    """Every listed expiration for a ticker as (date, dte, cycle), soonest first."""
+    ret, e = _call("get_option_expiration_date", code=norm(ticker))
+    if ret != RET_OK:
+        raise RuntimeError(f"OpenD expiration error: {e}")
+    rows = [{"expiration": r["strike_time"],
+             "dte": int(r["option_expiry_date_distance"]),
+             "cycle": r["expiration_cycle"]} for _, r in e.iterrows()]
+    return sorted(rows, key=lambda r: r["dte"])
+
+
+def option_chain(ticker: str, expiration: str):
+    """The contract list for one expiration. Strikes and types only; quotes and
+    greeks come from a snapshot of the codes this returns."""
+    ret, chain = _call("get_option_chain", code=norm(ticker),
+                       start=expiration, end=expiration)
+    if ret != RET_OK:
+        raise RuntimeError(f"OpenD chain error: {chain}")
+    return chain
 
 
 def _count(v) -> int:
@@ -149,7 +178,7 @@ def fetch_legs(ticker: str, exp: str, side: str, spot: float, pct: float = 0.15)
 
     Snapshot omits strike_price/option_type -> take them from the chain frame.
     """
-    code = _norm(ticker)
+    code = norm(ticker)
     ret, chain = _call("get_option_chain", code=code, start=exp, end=exp)
     if ret != RET_OK:
         raise RuntimeError(f"OpenD chain error: {chain}")
@@ -208,7 +237,7 @@ def iv_surface_points(ticker: str, spot: float, today=None, max_days: int = 30,
     Returns [{expiry, dte, strike, iv}] with iv as a decimal.
     """
     today = today or dt.date.today()
-    ret, chain = _call("get_option_chain", code=_norm(ticker),
+    ret, chain = _call("get_option_chain", code=norm(ticker),
                        start=(today + dt.timedelta(days=1)).isoformat(),
                        end=(today + dt.timedelta(days=max_days)).isoformat())
     if ret != RET_OK:
@@ -284,7 +313,7 @@ def next_earnings(ticker: str, today=None, horizon_days: int = 14):
     only one of them is safe to sell premium on.
     """
     today = today or dt.date.today()
-    ret, df = _call("get_financials_earnings_price_history", _norm(ticker))
+    ret, df = _call("get_financials_earnings_price_history", norm(ticker))
     if ret != RET_OK:
         raise RuntimeError(f"OpenD earnings history error for {ticker}: {df}")
     end = (today + dt.timedelta(days=horizon_days - 1)).isoformat()
