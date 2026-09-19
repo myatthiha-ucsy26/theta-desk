@@ -32,7 +32,7 @@ foundation; the subpackages are grouped by what each one talks to.
 | `stats` | Percentile rank; the one definition of "rank" | — |
 | `strategy` | Indicators, gate verdicts, spread construction | — |
 | `signals` | A live signal: market data through the gates | market, strategy |
-| `paper` | Marking the paper book to model | market |
+| `paper` | Marking a book to model | market |
 | `credentials` | Which setting stands in for which environment variable | — |
 | `context` | Per-process state: database, broker, threads | storage |
 | `services` | Wires the engine and monitor to the outside world | most of the above |
@@ -44,6 +44,7 @@ foundation; the subpackages are grouped by what each one talks to.
 | `market/` | Quotes, klines, option chains, IV, pricing, rate limiting | OpenD |
 | `storage/` | SQLite: positions, paper trades, settings, journal, edge table | disk |
 | `broker/` | Orders, account, position management, settlement | OpenD |
+| `broker/paper.py` | Simulates fills from live quotes; sends nothing | market, storage |
 | `engine/` | Gate pipeline, scan loop, position monitor, auto-trade | market, broker, storage |
 | `research/` | Backtest and aggregate statistics | market, strategy |
 | `api/` | Flask blueprints | everything above |
@@ -103,11 +104,27 @@ browser and switched in Settings.
 In development `npm run dev` proxies `/api` to the Flask server on 5057. In
 production `npm run build` emits `dist/`, which Flask serves.
 
+## Accounts
+
+The bot trades through a paper account or the live one, chosen by the
+`account_mode` setting. `PaperBroker` implements the same interface as the real
+broker, so the engine, the monitor and the autotrade rules run unchanged in both
+— which is the only reason paper mode says anything about live mode.
+
+Every position and bot trade carries an `account`, and the queries that could
+total simulated and real money together require it as a keyword argument.
+`docs/paper-and-live-accounts.md` has the detail, including why leaving the live
+account with an open position is refused.
+
 ## Data
 
 SQLite, at `data/engine.db` by default and overridable with `CS_DB_PATH`. It
-holds open positions, paper trades, validated settings, the alert journal and
-the conditional edge table.
+holds open positions, bot trades, simulated orders, validated settings, the
+alert journal and the conditional edge table.
+
+`init()` creates missing tables and then adds missing columns: `CREATE TABLE IF
+NOT EXISTS` does nothing to a table that already exists, so a schema change
+needs the second step.
 
 Klines and IV history are cached to disk under `klines_cache/` and `iv_history/`.
 Both are derived from OpenD and safe to delete; they are not source and are not

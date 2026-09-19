@@ -3,9 +3,9 @@
 **A local trading desk for selling credit spreads on US equity options.**
 
 It scans a watchlist through a fixed set of gates, shows you exactly which gate
-each candidate died at and why, keeps a paper book marked to model, and — once
-you explicitly switch it on — places and manages real orders through moomoo
-OpenD.
+each candidate died at and why, and runs the whole thing against a **paper
+account** with simulated fills until you tell it otherwise. Switch it to the
+live account and the same code places real orders through moomoo OpenD.
 
 <p>
   <img alt="Python 3.11" src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white">
@@ -14,7 +14,7 @@ OpenD.
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-stdlib-003B57?logo=sqlite&logoColor=white">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-902-success">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-958-success">
 </p>
 
 Everything runs on your own machine. There is no hosted component, no account
@@ -35,6 +35,7 @@ one).
 - [What it does](#what-it-does)
 - [Tech stack](#tech-stack)
 - [How it works](#how-it-works)
+- [Paper and live accounts](#paper-and-live-accounts)
 - [System architecture](#system-architecture)
 - [Install and set up](#install-and-set-up)
 - [Running it](#running-it)
@@ -71,7 +72,7 @@ it.
 |---|---|
 | **Scan** | Walks your watchlist on a schedule and shows a board of every ticker × DTE with the gate it reached. Failures are as visible as passes. |
 | **Study** | One ticker in depth: a live signal streamed step by step, a 3D IV surface, a payoff surface, a backtest over the same gates, and an optional AI second opinion. |
-| **Manage** | The paper book, marked to model on the current spot and remaining time — not at expiration, so a position with time value has not "won" yet. |
+| **Manage** | The active account's book, marked to model on the current spot and remaining time — not at expiration, so a position with time value has not "won" yet. |
 | **Learn** | Where candidates died over the last N days, the pooled edge table by IV-rank bucket, and paper results measured against what the backtest predicted. |
 | **Settings** | Watchlist, DTEs, gate switches, risk caps, credentials, and the switch to live trading. |
 
@@ -89,7 +90,7 @@ events so you watch them work rather than waiting on a spinner.
 | pandas | 3.0 | Kline frames come out of OpenD as DataFrames |
 | futu-api | 10.10 | The moomoo OpenD client, for both quotes and orders |
 | SQLite | stdlib | One file, transactional, zero daemons. No ORM — the schema is small and the queries are hand-written |
-| pytest | 9.1 | 500 tests, none of which touch the network |
+| pytest | 9.1 | 541 tests, none of which touch the network |
 | mcp | 2.2 | Optional: exposes the market-data tools over MCP |
 
 **Frontend**
@@ -101,7 +102,7 @@ events so you watch them work rather than waiting on a spinner.
 | Vite | 8 | Dev server with an `/api` proxy; builds to static assets Flask serves |
 | Tailwind | 4.3 | Layout and tokens |
 | Three.js + React Three Fiber | 0.186 | The IV and payoff surfaces are genuinely 3D |
-| Vitest + Testing Library | 5.0 | 402 tests across 38 files |
+| Vitest + Testing Library | 5.0 | 417 tests across 39 files |
 
 No state-management library, no component library, no CSS-in-JS. The logic
 lives in plain functions under `src/lib/` and is tested directly.
@@ -203,6 +204,61 @@ and auto cannot drift apart. Switching it on requires typing `LIVE` and passing
 a pre-flight check (Telegram configured, AI key present, monitor running, OpenD
 connected, trading unlocked).
 
+## Paper and live accounts
+
+The bot trades through one of two accounts, and the same code runs in both.
+
+| | `mode: manual` | `mode: auto` |
+|---|---|---|
+| **`account_mode: paper`** | notebook only | **the bot runs against simulated fills** |
+| **`account_mode: live`** | real account visible, nothing trades | real money |
+
+Paper is the default. Typing `LIVE` and passing pre-flight is what it takes to
+reach the bottom-right cell — starting the paper bot asks for nothing, because
+nothing is at stake and a confirmation you type by reflex protects no one.
+
+### Fills you can believe
+
+The paper account is not a broker that says yes. `PaperBroker` implements the
+same interface as the real one, and an order fills only when the live market
+actually supports its limit price:
+
+- an opening spread fills when the **natural credit** reaches the limit
+- a closing one fills when the **natural debit** falls to it
+
+A mid-priced entry therefore does *not* fill on the spot — the natural credit
+sits below mid by half the spread — so the bot's own reprice, timeout and cancel
+loop has to earn it. That loop is the code most likely to be wrong with real
+money, and a broker that always filled would never exercise it.
+
+Commissions are charged per leg per contract on both sides
+(`paper_fee_per_contract`). Without them a 50% take-profit on a $0.30 credit
+reads far better on paper than it can ever be live.
+
+### The two books never mix
+
+Every position and bot trade belongs to an account, and the queries that could
+otherwise total simulated and real money together take the account as a
+**required** argument — forgetting it is a `TypeError`, not a quietly wrong
+number. Buying power, P&L, the scan board's risk check and the exposure matrix
+all read only the active account.
+
+### Leaving the live account
+
+Switching from live to paper **is refused while any live trade is open or
+working**, and the error names the tickers in the way:
+
+```
+Close the live account's open positions first (NVDA).
+Switching to paper would leave them unmanaged.
+```
+
+The monitor is the only thing that closes a position and it follows the account,
+so allowing the switch would strand a funded spread with nothing watching it.
+
+Which account is trading is shown in the status line on every screen. Live reads
+as a warning — nothing is wrong, but it is the state where a mistake costs money.
+
 ## System architecture
 
 ```mermaid
@@ -252,7 +308,7 @@ headless and the tests never need a request context.
 
 **Every side effect is injected.** The scan pipeline and the monitor take their
 IO as a dict of callables, so the entire decision path runs offline against
-fakes. That is why 500 backend tests finish in under three seconds and none of
+fakes. That is why 541 backend tests finish in under four seconds and none of
 them can accidentally reach OpenD or fire a real order.
 
 **Process state is passed in, not reached for.** The database path, broker
@@ -271,7 +327,7 @@ run several independent apps at once.
 | `config` · `paths` | `.env` loading; where the database and caches live |
 | `stats` · `strategy` | Percentile rank; indicators, gate verdicts, spread construction. **Pure** |
 | `signals` | A live signal: market data through the gates |
-| `paper` | Marking the paper book to model |
+| `paper` | Marking a book to model |
 | `credentials` · `context` | Which setting maps to which env var; per-process state |
 | `services` | Wires the engine and monitor to the outside world |
 | `notify` | Telegram alerts, AI trade review |
@@ -379,9 +435,11 @@ Everything else — watchlist, DTEs, interval, gate switches, risk caps, exit
 rules — lives in the Settings screen and is validated server-side before it is
 stored.
 
-Defaults worth knowing: engine **off**, mode **manual**, `ivrich` only, DTEs 7
-and 14, scan every 15 minutes during market hours, max 5 open positions, max
-$2,500 deployed, $500 risk per trade, take profit 50%, stop at 2× credit.
+Defaults worth knowing: **paper account**, engine **off**, bot **stopped**,
+`ivrich` only, DTEs 7 and 14, scan every 15 minutes during market hours, max 5
+open positions, max $2,500 deployed, $500 risk per trade, take profit 50%, stop
+at 2× credit, $10,000 simulated cash and $0.65 per contract in paper
+commissions.
 
 ## Market data over MCP
 
@@ -422,7 +480,7 @@ theta-desk/
 │   │   ├── strategy.py       indicators, verdicts, spread builder  (pure)
 │   │   ├── stats.py          percentile rank                       (pure)
 │   │   ├── signals.py        a live signal
-│   │   ├── paper.py          marking the paper book
+│   │   ├── paper.py          marking a book to model
 │   │   ├── context.py        AppContext
 │   │   ├── services.py       dependency wiring
 │   │   ├── notify.py         Telegram + AI review
@@ -430,7 +488,7 @@ theta-desk/
 │   │   ├── api/              7 blueprints + SSE streams
 │   │   ├── market/           OpenD data, pricing, rate limiting
 │   │   ├── storage/          SQLite
-│   │   ├── broker/           orders, account, settlement
+│   │   ├── broker/           orders, account, settlement, and the paper broker
 │   │   ├── engine/           gates, scan loop, monitor, autotrade
 │   │   └── research/         backtest
 │   └── tests/                mirrors the package
@@ -441,21 +499,24 @@ theta-desk/
 │       └── screens/          Scan, Study, Manage, Learn, Settings
 └── docs/
     ├── architecture.md
+    ├── paper-and-live-accounts.md
     └── credit_spread_spec.md
 ```
 
 ## Testing
 
 ```bash
-cd backend  && .venv/bin/python -m pytest      # 500 tests
-cd frontend && npm test                        # 402 tests, 38 files
+cd backend  && .venv/bin/python -m pytest      # 541 tests
+cd frontend && npm test                        # 417 tests, 39 files
 ```
 
 Both run automatically in `run.sh` before the server starts.
 
 No test reaches the network. Market data is faked at the module boundary and
 the broker has a fake that records orders instead of sending them — so the
-order path is covered without anything leaving the machine.
+order path is covered without anything leaving the machine. A contract test
+compares `PaperBroker` against the real `Broker` method for method, because
+paper mode proves nothing about live mode the moment the two drift.
 
 ## Data and files
 
@@ -481,12 +542,15 @@ here is a backtest — it is not evidence about tomorrow, and the `trend` mode
 carries a standing caution precisely because five years of data said it stopped
 working in a bear market.
 
-Before you switch `mode` to `auto`:
+Before you switch to the live account:
 
 - Run it in paper mode long enough to disagree with it at least once.
 - Read `docs/credit_spread_spec.md` and run the backtest yourself.
 - Understand that the monitor closes positions on rules you set, and that a gap
   through your short strike does not wait for a 60-second loop.
 
-Paper mode is the default. Live trading requires typing `LIVE` and clearing a
-pre-flight check. Those speed bumps are there on purpose.
+The paper account is the default, and the bot runs there against simulated
+fills without asking you for anything. Reaching the live account **and** starting
+the bot requires typing `LIVE` and clearing a pre-flight check, and you cannot
+leave the live account while it still holds an open position. Those speed bumps
+are there on purpose.

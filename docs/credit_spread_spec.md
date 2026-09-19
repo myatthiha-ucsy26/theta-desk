@@ -2,6 +2,12 @@
 
 Date: 2026-09-13
 
+> The strategy below is what the desk implements today: the gates, the
+> thresholds and the strike rules are current. The file layout and the phasing
+> are kept as written, as a record of how it was planned — both phases are long
+> since done, and the code has moved. `docs/architecture.md` describes where it
+> actually lives now.
+
 ## Goal
 
 An objective, repeatable credit-spread **entry + strike-selection** tool that removes
@@ -72,18 +78,25 @@ ATR(14), realized vol(20d), Expected Move = `spot · IV · sqrt(DTE/365)`.
 
 ## File layout
 
+As planned (see the note at the top; today's names are in brackets):
+
 ```
-moomoo_mcp/
   cs_core.py            # indicators · 3 filters · iv_rank · strike builder (PURE)
+                        #   [theta/strategy.py, with iv_rank in theta/stats.py]
   cs_pricing.py         # Black-Scholes + IV estimate (PURE)
+                        #   [theta/market/pricing.py]
   cs_backtest.py        # harness → stats
-  klines_cache/<T>.csv  # cached daily klines (quota-safe)
-  iv_history/<T>.csv    # logged ATM IV → true IV rank over time
+                        #   [theta/research/backtest.py]
+  klines_cache/<T>.csv  # cached daily klines (quota-safe)      [unchanged]
+  iv_history/<T>.csv    # logged ATM IV → true IV rank over time [unchanged]
   test_cs_core.py       # unit tests (no OpenD)
   test_cs_pricing.py    # BS reference + parity tests
+                        #   [backend/tests/, mirroring the package]
   # Phase 1 (only if gate passes):
   app.py                # Flask: /api/signal → JSON; serves index.html
+                        #   [theta/api/, seven blueprints; the UI is frontend/]
   static/index.html     # dashboard UI
+                        #   [replaced by the React desk in frontend/]
 ```
 
 ## Testing (TDD)
