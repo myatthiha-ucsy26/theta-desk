@@ -18,6 +18,7 @@ def api_engine_status():
     else:
         body = {"running": context.runner.running, **context.runner.status}
     body.update({"engine_enabled": settings["engine_enabled"], "mode": settings["mode"],
+                 "account_mode": settings["account_mode"],
                  "market_hours_only": settings["market_hours_only"]})
     return jsonify(body)
 

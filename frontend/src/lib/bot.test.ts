@@ -3,7 +3,7 @@ import type { BotStatus, LiveTrade } from "./api";
 import { botBadge, exitLevels, slotProgress } from "./bot";
 
 const base: BotStatus = {
-  mode: "auto", paused: false, pause_reason: "",
+  mode: "auto", account_mode: "paper", paused: false, pause_reason: "",
   monitor: { state: "watching", last_ok: "2026-09-16T15:00:00+00:00", last_error: null },
   net_pnl: 120, slots: 1, next_slot_at: 500, active: [], closed: [], marks: {}, events: [],
 };

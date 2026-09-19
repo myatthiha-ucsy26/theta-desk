@@ -7,7 +7,7 @@ const OPEN = new Date("2026-09-16T15:00:00+00:00");   // Wed 11:00 AM New York
 const CLOSED = new Date("2026-09-19T15:00:00+00:00"); // Saturday
 
 function status(over: Partial<EngineStatus> = {}): EngineStatus {
-  return { running: true, state: "idle", engine_enabled: true, mode: "manual", market_hours_only: false, ...over };
+  return { running: true, state: "idle", engine_enabled: true, mode: "manual", account_mode: "paper", market_hours_only: false, ...over };
 }
 
 describe("usMarketOpen", () => {

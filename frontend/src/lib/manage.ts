@@ -65,7 +65,8 @@ export function exposure(bot: BotStatus | null, account: Account | null): Exposu
     unmarked: legs.filter((l) => l.pnl === null).length,
     credit,
     margin,
-    navPct: account && account.net_value > 0 ? (margin / account.net_value) * 100 : null,
+    // The paper account reports no net value, so this share is simply not available there.
+    navPct: account?.net_value && account.net_value > 0 ? (margin / account.net_value) * 100 : null,
     unrealized,
     capturedPct: credit > 0 ? (unrealized / credit) * 100 : null,
     realized: sum(bot.closed.map((t) => t.pnl ?? 0)),

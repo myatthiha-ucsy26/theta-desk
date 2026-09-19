@@ -68,7 +68,7 @@ const live: LiveTrade = {
 };
 
 const liveBook: BotStatus = {
-  mode: "manual", paused: true, pause_reason: "stopped by you",
+  mode: "manual", account_mode: "paper", paused: true, pause_reason: "stopped by you",
   monitor: { state: "ok", last_ok: null, last_error: null },
   net_pnl: 0, slots: 4, next_slot_at: 2000,
   active: [live],
@@ -77,8 +77,7 @@ const liveBook: BotStatus = {
   events: [],
 };
 
-const liveAccount: Account = {
-  net_value: 2500, cash: 900, buying_power: 4000,
+const liveAccount: Account = { account: "live", net_value: 2500, cash: 900, buying_power: 4000,
   unrealized_pl: 48, open_count: 4, currency: "USD",
 };
 

@@ -7,6 +7,7 @@ import { Panel } from "../components/Panel";
 import { SpreadCard } from "../components/SpreadCard";
 import { StatusBadge, type Tone } from "../components/StatusBadge";
 import { api, type BotStatus, type OpenPosition, type Position } from "../lib/api";
+import { bookLabel, bookWord } from "../lib/account";
 import { botBadge } from "../lib/bot";
 import { countdown, exposure, settlement, type Exposure } from "../lib/manage";
 import { onSettingsSaved } from "../lib/settingsBus";
@@ -39,15 +40,17 @@ const RAIL = "flex min-w-0 flex-col gap-8 min-[1200px]:col-start-2 min-[1200px]:
 
 export function Manage() {
   const book = usePoll(() => api.paper(), POLL_MS);
-  // The exposure matrix reads the bot's live book, not the paper one: it is the spreads actually
-  // held on the real account, and the only book "margin against NAV" means anything for. The trade
-  // table below reads the same poll, so the two cannot report one spread's P&L differently.
+  // The exposure matrix reads the bot's book rather than the hand-recorded one: those are the
+  // spreads actually held in the account that is trading, and the only book "margin against NAV"
+  // means anything for. The trade table below reads the same poll, so the two cannot report one
+  // spread's P&L differently.
   const bot = usePoll(() => api.bot(), LIVE_POLL_MS);
-  // Read-only, and the only source of net value: the matrix has nothing to read NAV usage
-  // against while OpenD is down, so a failure here leaves that one tile blank.
+  // Read-only, and the only source of net value. The paper account reports no NAV, so that one
+  // tile is blank there for the same reason it is blank while OpenD is down.
   const account = usePoll(() => api.account(), POLL_MS);
   // The paper cards name a take-profit target, which is a settings value rather than the book's.
   const settings = usePoll(() => api.settings(), POLL_MS);
+  const accountMode = settings.data?.account_mode;
   const [selected, setSelected] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -115,7 +118,7 @@ export function Manage() {
           }
         >
           {book.error && <p className="text-sm text-critical">{book.error}</p>}
-          {!book.data && !book.error && <p className="text-sm text-ink-2">Loading the paper book…</p>}
+          {!book.data && !book.error && <p className="text-sm text-ink-2">Loading the {bookLabel(accountMode).toLowerCase()}…</p>}
           {bot.error && <p className="mt-1 text-sm text-critical">{bot.error}</p>}
           {!bot.data && !bot.error && <p className="mt-1 text-sm text-ink-2">Loading the live book…</p>}
 
@@ -191,7 +194,11 @@ export function Manage() {
 
         <Panel
           title="Open positions"
-          actions={minimal ? <span className="chip">{open.length} paper</span> : undefined}
+          actions={
+            <span className="chip">
+              {minimal ? `${open.length} ${bookWord(accountMode)}` : bookLabel(accountMode)}
+            </span>
+          }
         >
           {open.length === 0 ? (
             <p className="text-sm text-ink-2">

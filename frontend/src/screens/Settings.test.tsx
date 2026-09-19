@@ -41,7 +41,7 @@ import { setTemplate } from "../lib/templates";
 import { Settings } from "./Settings";
 
 const saved: SettingsData = {
-  engine_enabled: false, mode: "manual", watchlist: ["SPY", "QQQ", "META"],
+  engine_enabled: false, mode: "manual", account_mode: "paper", paper_starting_cash: 10000, paper_fee_per_contract: 0.65, watchlist: ["SPY", "QQQ", "META"],
   modes: ["ivrich"], dtes: [7, 14], interval_min: 15, ticker_gap_sec: 5,
   market_hours_only: true, edge_min_n: 10, edge_min_expectancy: 0,
   max_open_positions: 5, max_deployed_risk: 2500, ai_enabled: true,
@@ -409,7 +409,7 @@ const paperBook: PaperBook = {
 };
 
 const botIdle: BotStatus = {
-  mode: "manual", paused: false, pause_reason: "",
+  mode: "manual", account_mode: "paper", paused: false, pause_reason: "",
   monitor: { state: "idle", last_ok: null, last_error: null },
   net_pnl: 0, slots: 1, next_slot_at: 500,
   active: [], closed: [], marks: {}, events: [],

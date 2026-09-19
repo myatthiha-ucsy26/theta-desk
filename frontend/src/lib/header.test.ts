@@ -58,8 +58,7 @@ describe("statCards", () => {
 });
 
 describe("accountCards", () => {
-  const account: Account = {
-    net_value: 25310.4, cash: 18000.25, buying_power: 36000.5, unrealized_pl: -80.5, open_count: 3, currency: "USD",
+  const account: Account = { account: "live", net_value: 25310.4, cash: 18000.25, buying_power: 36000.5, unrealized_pl: -80.5, open_count: 3, currency: "USD",
   };
 
   it("builds the two real-account cards", () => {

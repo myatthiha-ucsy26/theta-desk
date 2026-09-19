@@ -44,6 +44,7 @@ export interface JournalRow { id: number; ts: string; decision: Decision }
 
 export interface EngineStatus {
   running: boolean; state: string; engine_enabled: boolean; mode: string;
+  account_mode?: AccountMode;
   market_hours_only: boolean;
   last_tick?: string | null; last_cycle?: string | null; last_error?: string | null;
   edge_built_at?: string | null; decisions?: number; alerts?: number;
@@ -51,8 +52,11 @@ export interface EngineStatus {
   next_scan_at?: string | null;
 }
 
+/** Which broker the bot trades through. Paper simulates fills; live is real money. */
+export type AccountMode = "paper" | "live";
+
 export interface Settings {
-  engine_enabled: boolean; mode: "manual" | "auto"; watchlist: string[]; modes: SignalMode[];
+  engine_enabled: boolean; mode: "manual" | "auto"; account_mode: AccountMode; watchlist: string[]; modes: SignalMode[];
   dtes: number[]; interval_min: number; ticker_gap_sec: number; market_hours_only: boolean;
   edge_min_n: number; edge_min_expectancy: number; max_open_positions: number;
   max_deployed_risk: number; ai_enabled: boolean; ai_allow_caution: boolean;
@@ -63,9 +67,10 @@ export interface Settings {
   ai_api_key: string; ai_api_endpoint: string; ai_model: string;
   telegram_bot_token: string; telegram_chat_id: string;
   tp_pct: number; sl_multiple: number; min_credit: number; bot_paused: boolean; bot_pause_reason: string;
+  paper_starting_cash: number; paper_fee_per_contract: number;
 }
 
-/** app.py's SECRET_MASK: a saved secret reads back as this, and posting it back means "unchanged". */
+/** The server's SECRET_MASK: a saved secret reads back as this, and posting it back means "unchanged". */
 export const SECRET_MASK = "********";
 
 export interface Position {
@@ -88,8 +93,13 @@ export interface PaperBook {
 }
 
 /** Real moomoo account, read-only. */
+/** The funded account, or the simulated one. Paper reports only cash and power:
+    there is no unrealized P&L to read off a broker that is not holding anything. */
 export interface Account {
-  net_value: number; cash: number; buying_power: number; unrealized_pl: number; open_count: number; currency: string;
+  account: AccountMode;
+  cash: number; currency: string;
+  power?: number;
+  net_value?: number; buying_power?: number; unrealized_pl?: number; open_count?: number;
 }
 
 export type LiveState = "entering" | "open" | "closing" | "closed" | "entry_cancelled";
@@ -109,7 +119,7 @@ export interface OrderEvent {
 }
 
 export interface BotStatus {
-  mode: "manual" | "auto"; paused: boolean; pause_reason: string;
+  mode: "manual" | "auto"; account_mode: AccountMode; paused: boolean; pause_reason: string;
   monitor: { state: string; last_ok: string | null; last_error: string | null };
   net_pnl: number; slots: number; next_slot_at: number;
   active: LiveTrade[]; closed: LiveTrade[]; marks: Record<string, number>; events: OrderEvent[];

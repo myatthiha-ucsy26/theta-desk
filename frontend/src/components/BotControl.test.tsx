@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BotStatus } from "../lib/api";
 
 const status: BotStatus = {
-  mode: "auto", paused: false, pause_reason: "",
+  mode: "auto", account_mode: "paper", paused: false, pause_reason: "",
   monitor: { state: "watching", last_ok: null, last_error: null },
   net_pnl: 0, slots: 1, next_slot_at: 500, active: [], closed: [], marks: {}, events: [],
 };

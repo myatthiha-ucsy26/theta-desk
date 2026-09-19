@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { accountBadge } from "../lib/account";
 import { api } from "../lib/api";
 import { engineState } from "../lib/engineState";
 import { onSettingsSaved } from "../lib/settingsBus";
@@ -40,6 +41,7 @@ export function StatusBar() {
   const hours = marketHours();
   const scanHint = scanNowView(data, false).hint;
   const nextScan = nextScanLabel(data);
+  const account = accountBadge(data?.account_mode);
 
   useEffect(() => setFast(isEngineBusy(data?.state)), [data?.state]);
 
@@ -64,7 +66,15 @@ export function StatusBar() {
   return (
     <div className="border-b border-rule py-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {/* Which account is trading leads the line: it is the one fact that changes
+            what every other item on this page means. */}
         <FolioItem first>
+          <span title={account.hint}>
+            <StatusBadge tone={account.tone} label={account.label} />
+          </span>
+        </FolioItem>
+
+        <FolioItem>
           {unknown ? (
             <StatusBadge tone="neutral" label="Checking engine…" />
           ) : error && !data ? (

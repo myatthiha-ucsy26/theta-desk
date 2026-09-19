@@ -75,19 +75,29 @@ export function statCards(book: PaperBook | null, maxOpen: number | null): StatC
   ];
 }
 
-/** The two figures from the real moomoo account worth a tile: what it is worth, and what it
-    has made. Balances only; the app never trades it. */
+/** The two figures from the account worth a tile. Balances only; these tiles never trade.
+
+    The live account reports what it is worth and what it has made. The paper account holds
+    nothing at a broker, so there is no net value or unrealised P&L to read off it: it reports
+    the cash it started with and the power left after the risk it has deployed. */
 export function accountCards(account: Account | null): StatCard[] {
   if (!account) {
     return ["Net value", "Unrealised P&L"].map((label) => ({ label, value: "—", note: "" }));
   }
-  const pl = account.unrealized_pl;
+  if (account.account === "paper") {
+    return [
+      { label: "Paper cash", value: formatMoney(account.cash, { signed: false }), note: account.currency },
+      { label: "Buying power", value: formatMoney(account.power ?? 0, { signed: false }), note: "simulated" },
+    ];
+  }
+  const pl = account.unrealized_pl ?? 0;
+  const open = account.open_count ?? 0;
   return [
-    { label: "Net value", value: formatMoney(account.net_value, { signed: false }), note: account.currency },
+    { label: "Net value", value: formatMoney(account.net_value ?? 0, { signed: false }), note: account.currency },
     {
       label: "Unrealised P&L",
       value: formatMoney(pl, { signed: true }),
-      note: `${account.open_count} open ${account.open_count === 1 ? "position" : "positions"}`,
+      note: `${open} open ${open === 1 ? "position" : "positions"}`,
       tone: pl > 0 ? "profit" : pl < 0 ? "loss" : undefined,
     },
   ];

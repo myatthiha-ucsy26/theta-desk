@@ -158,3 +158,26 @@ describe("StatusBar", () => {
     expect(screen.getByText("US market is closed, so many tickers will have no option data.")).toBeDefined();
   });
 });
+
+describe("the account badge", () => {
+  it("names the live account as a warning, always on screen", async () => {
+    // Whether the next fill spends money is not something to go looking for.
+    engineStatus.mockResolvedValue({ ...online, account_mode: "live" });
+    render(<StatusBar />);
+    expect(await screen.findByText("Live account")).toBeTruthy();
+  });
+
+  it("names the paper account", async () => {
+    engineStatus.mockResolvedValue({ ...online, account_mode: "paper" });
+    render(<StatusBar />);
+    expect(await screen.findByText("Paper account")).toBeTruthy();
+  });
+
+  it("does not claim paper before the first status lands", async () => {
+    engineStatus.mockResolvedValue({ ...online, account_mode: undefined });
+    render(<StatusBar />);
+    expect(await screen.findByText("Account —")).toBeTruthy();
+    expect(screen.queryByText("Paper account")).toBeNull();
+  });
+});
+
