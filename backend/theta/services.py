@@ -41,8 +41,13 @@ def engine_services(ctx, history):
 
 
 def preflight(ctx):
-    """What must be true before live trading may be switched on. Never returns secrets."""
+    """What must be true before live trading may be switched on. Never returns secrets.
+
+    On the paper account the broker checks are reported as satisfied and say so:
+    a simulated fill needs quotes, not a funded, unlocked trading connection.
+    """
     env = ctx.credential_env()
+    account = ctx.settings()["account_mode"]
     checks = [
         {"name": "Telegram configured",
          "ok": bool(env.get("TELEGRAM_BOT_TOKEN") and env.get("TELEGRAM_CHAT_ID")), "detail": ""},
@@ -52,6 +57,9 @@ def preflight(ctx):
     ]
     for name, fn in (("OpenD connected to the real account", ctx.broker.buying_power),
                      ("Trading unlocked", ctx.broker.unlock)):
+        if account == "paper":
+            checks.append({"name": name, "ok": True, "detail": "not required on paper"})
+            continue
         try:
             result = fn()
             checks.append({"name": name, "ok": True,

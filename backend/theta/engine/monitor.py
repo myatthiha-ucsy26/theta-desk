@@ -25,6 +25,12 @@ def iso(t):
     return t.astimezone(dt.timezone.utc).isoformat(timespec="seconds")
 
 
+def account_of(conn):
+    """Which account the bot is trading. Read rather than passed, so a control
+    called straight from an endpoint cannot act on the wrong book."""
+    return db.get_settings(conn)["account_mode"]
+
+
 def pause(conn, services, reason, now):
     """Stop new entries and say why. Exits keep running. Idempotent."""
     if db.get_settings(conn)["bot_paused"]:
@@ -78,17 +84,18 @@ def enter(conn, decision, settings, services, now):
         return f"skipped: {e}"
     prices = at.spread_prices(q[short["code"]], q[long["code"]])
 
-    active = db.list_live_trades(conn, db.ACTIVE_STATES)
+    account = latest["account_mode"]
+    active = db.list_live_trades(conn, db.ACTIVE_STATES, account=account)
     day = iso(at.day_start(now))
     block = at.entry_block({
         "mode": settings["mode"], "paused": settings["bot_paused"],
         "pause_reason": settings["bot_pause_reason"], "now": now,
-        "day_pnl": db.bot_net_pnl(conn, since_ts=day),
+        "day_pnl": db.bot_net_pnl(conn, since_ts=day, account=account),
         "open_count": len(active),
-        "week_entries": db.bot_entries_since(conn, iso(at.week_start(now))),
-        "net_pnl": db.bot_net_pnl(conn),
+        "week_entries": db.bot_entries_since(conn, iso(at.week_start(now)), account=account),
+        "net_pnl": db.bot_net_pnl(conn, account=account),
         "ticker_active": any(t["ticker"] == ticker for t in active),
-        "cancelled_today": db.cancelled_since(conn, ticker, day) > 0,
+        "cancelled_today": db.cancelled_since(conn, ticker, day, account=account) > 0,
         "buying_power": buying_power,
         "max_loss": at.max_loss(prices["mid"]),
     })
@@ -107,7 +114,7 @@ def enter(conn, decision, settings, services, now):
         on_broker_error(conn, services, now, e, "place_entry", trade_id, prices["mid"])
         return f"rejected: {e}"
     db.insert_live_trade(conn, {
-        "id": trade_id, "ticker": ticker, "direction": direction, "expiry": signal["expiration"],
+        "id": trade_id, "account": account, "ticker": ticker, "direction": direction, "expiry": signal["expiration"],
         "short_code": short["code"], "long_code": long["code"],
         "short_strike": short["strike"], "long_strike": long["strike"],
         "width": at.WIDTH, "contracts": at.CONTRACTS, "planned_credit": prices["mid"],
@@ -137,7 +144,7 @@ def step(conn, settings, services, now):
     """One pass over every active bot trade. Every trade is tried; errors are raised together."""
     handlers = {"entering": _step_entering, "open": _step_open, "closing": _step_closing}
     errors = []
-    for t in db.list_live_trades(conn, db.ACTIVE_STATES):
+    for t in db.list_live_trades(conn, db.ACTIVE_STATES, account=settings["account_mode"]):
         try:
             handlers[t["state"]](conn, t, settings, services, now)
         except Exception as e:
@@ -345,17 +352,19 @@ def _book_close(conn, t, o, reason, services, now):
 def recover(conn, services, now):
     """Problems between moomoo's orders/positions and the bot's records."""
     b = services["broker"]
-    known = {t["id"] for t in db.list_live_trades(conn)}
+    account = account_of(conn)
+    known = {t["id"] for t in db.list_live_trades(conn, account=account)}
     problems = [f"unknown bot order {o['order_id']} ({o['remark']})"
                 for o in b.open_bot_orders() if o["remark"][len(REMARK_PREFIX):] not in known]
-    problems += at.reconcile(db.list_live_trades(conn, ("open",)), b.positions(), now)
+    problems += at.reconcile(db.list_live_trades(conn, ("open",), account=account),
+                             b.positions(), now)
     return problems
 
 
 def stop_trading(conn, services, now):
     """Block new entries and cancel working entry orders. Open spreads keep TP and SL."""
     pause(conn, services, "stopped by you", now)
-    for t in db.list_live_trades(conn, ("entering",)):
+    for t in db.list_live_trades(conn, ("entering",), account=account_of(conn)):
         try:
             services["broker"].cancel(t["entry_order_id"])
             db.log_order_event(conn, iso(now), "cancel_entry", "sent", t["id"], t["entry_order_id"], reason="stopped by you")
@@ -367,7 +376,7 @@ def close_all(conn, services, now):
     """Stop trading, then close every open bot spread the same way a stop loss does."""
     stop_trading(conn, services, now)
     n = 0
-    for t in db.list_live_trades(conn, ("open",)):
+    for t in db.list_live_trades(conn, ("open",), account=account_of(conn)):
         begin_close(conn, t, "manual", _prices(t, services), services, now)
         n += 1
     return n
@@ -401,7 +410,8 @@ class Monitor:
         try:
             db.init(conn)
             settings = db.get_settings(conn)
-            active = db.list_live_trades(conn, db.ACTIVE_STATES)
+            account = settings["account_mode"]
+            active = db.list_live_trades(conn, db.ACTIVE_STATES, account=account)
             if not self._recovered:
                 problems = recover(conn, self.services, now)
                 self._recovered = True
@@ -414,7 +424,7 @@ class Monitor:
                 self._ok("market closed", now)
                 return
             step(conn, settings, self.services, now)
-            problems = at.reconcile(db.list_live_trades(conn, ("open",)),
+            problems = at.reconcile(db.list_live_trades(conn, ("open",), account=account),
                                     self.services["broker"].positions(), now)
             self._mismatches = self._mismatches + 1 if problems else 0
             if self._mismatches >= at.MISMATCH_CONFIRMATIONS:

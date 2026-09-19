@@ -6,6 +6,8 @@ from tests import fakes as f
 from theta.storage import db
 from theta.engine import monitor
 
+ACCOUNT = "live"
+
 UTC = dt.timezone.utc
 SATURDAY = dt.datetime(2026, 9, 19, 15, 0, tzinfo=UTC)
 
@@ -27,7 +29,7 @@ def with_conn(path, fn):
 def open_trade(path, b, svc):
     def go(conn):
         monitor.enter(conn, f.decision(), db.get_settings(conn), svc, f.NOW)
-        t = db.list_live_trades(conn)[0]
+        t = db.list_live_trades(conn, account=ACCOUNT)[0]
         b.fill(t["entry_order_id"])
         monitor.step(conn, db.get_settings(conn), svc, f.NOW)
         return db.get_live_trade(conn, t["id"])

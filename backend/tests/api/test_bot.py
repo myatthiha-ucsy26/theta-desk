@@ -4,6 +4,8 @@ from tests import fakes as f
 from theta import services
 from theta.storage import db
 
+ACCOUNT = "live"
+
 
 @pytest.fixture
 def client(make_client, db_path, monkeypatch):
@@ -18,19 +20,30 @@ def ready(monkeypatch, ok=True):
                         lambda context: [{"name": "OpenD", "ok": ok, "detail": ""}])
 
 
-def test_switching_to_auto_needs_live_confirmation(client, monkeypatch):
+def test_starting_the_paper_bot_needs_no_confirmation(client):
+    """Nothing is at stake on the paper account, so it must not demand a ritual."""
+    c, *_ = client
+    r = c.post("/api/settings", json={"mode": "auto"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert (body["mode"], body["account_mode"]) == ("auto", "paper")
+
+
+def test_going_live_needs_live_confirmation(client, monkeypatch):
     c, path, *_ = client
     ready(monkeypatch)
-    r = c.post("/api/settings", json={"mode": "auto"})
+    r = c.post("/api/settings", json={"account_mode": "live", "mode": "auto"})
     assert r.status_code == 400 and "LIVE" in r.get_json()["error"]
-    r = c.post("/api/settings", json={"mode": "auto", "confirm": "LIVE"})
-    assert r.status_code == 200 and r.get_json()["mode"] == "auto" and "confirm" not in r.get_json()
+    r = c.post("/api/settings", json={"account_mode": "live", "mode": "auto", "confirm": "LIVE"})
+    body = r.get_json()
+    assert r.status_code == 200 and body["mode"] == "auto" and body["account_mode"] == "live"
+    assert "confirm" not in body
 
 
-def test_switching_to_auto_needs_a_ready_preflight(client, monkeypatch):
+def test_going_live_needs_a_ready_preflight(client, monkeypatch):
     c, *_ = client
     ready(monkeypatch, ok=False)
-    r = c.post("/api/settings", json={"mode": "auto", "confirm": "LIVE"})
+    r = c.post("/api/settings", json={"account_mode": "live", "mode": "auto", "confirm": "LIVE"})
     assert r.status_code == 400 and "OpenD" in r.get_json()["error"]
 
 
@@ -43,9 +56,9 @@ def test_bot_status_reports_slots_and_trades(client):
     c, path, broker, svc = client
     conn = db.connect(path)
     db.init(conn)
-    db.put_settings(conn, {"mode": "auto"})
+    db.put_settings(conn, {"mode": "auto", "account_mode": ACCOUNT})
     db.insert_live_trade(conn, {
-        "id": "w", "ticker": "SPY", "direction": "SELL_PUT", "expiry": "2026-09-30",
+        "id": "w", "account": ACCOUNT, "ticker": "SPY", "direction": "SELL_PUT", "expiry": "2026-09-30",
         "short_code": f.SHORT, "long_code": f.LONG, "short_strike": 731.0, "long_strike": 726.0,
         "width": 5.0, "contracts": 1, "planned_credit": 0.6, "state": "closed", "pnl": 520.0,
         "opened_at": "2026-09-15T15:00:00+00:00", "closed_at": "2026-09-15T18:00:00+00:00"})

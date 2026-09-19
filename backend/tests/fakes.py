@@ -99,5 +99,6 @@ def decision(ticker="SPY"):
 def db(tmp_path):
     conn = store.connect(str(tmp_path / "bot.db"))
     store.init(conn)
-    store.put_settings(conn, {"mode": "auto"})
+    # The bot fakes exercise the live path; the paper account has its own tests.
+    store.put_settings(conn, {"mode": "auto", "account_mode": "live"})
     return conn

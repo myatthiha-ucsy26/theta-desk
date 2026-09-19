@@ -6,6 +6,8 @@ from tests import fakes as f
 from theta.storage import db
 from theta.engine import monitor
 
+ACCOUNT = "live"
+
 UTC = dt.timezone.utc
 
 
@@ -18,7 +20,7 @@ def conn(tmp_path):
 
 def entered(conn, b, svc):
     monitor.enter(conn, f.decision(), db.get_settings(conn), svc, f.NOW)
-    return db.list_live_trades(conn)[0]
+    return db.list_live_trades(conn, account=ACCOUNT)[0]
 
 
 def opened(conn, b, svc, credit=0.60):

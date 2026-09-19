@@ -12,7 +12,8 @@ bp = Blueprint("bot", __name__)
 
 def _payload(conn, context):
     settings = db.get_settings(conn)
-    trades = db.list_live_trades(conn)
+    account = settings["account_mode"]
+    trades = db.list_live_trades(conn, account=account)
     active = [t for t in trades if t["state"] in db.ACTIVE_STATES]
     marks = {}
     codes = [c for t in active if t["state"] == "open"
@@ -25,9 +26,10 @@ def _payload(conn, context):
                      for t in active if t["state"] == "open"}
         except Exception:
             marks = {}
-    net = db.bot_net_pnl(conn)
+    net = db.bot_net_pnl(conn, account=account)
     return {
-        "mode": settings["mode"], "paused": settings["bot_paused"],
+        "mode": settings["mode"], "account_mode": account,
+        "paused": settings["bot_paused"],
         "pause_reason": settings["bot_pause_reason"],
         "monitor": (context.monitor.status if context.monitor is not None
                     else {"state": "not started", "last_ok": None, "last_error": None}),

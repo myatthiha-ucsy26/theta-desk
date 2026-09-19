@@ -34,7 +34,25 @@ def api_settings():
             return jsonify({"error": "JSON object required"}), 400
         body = credentials.without_unchanged_secrets(body)
         confirm = body.pop("confirm", None)
-        if body.get("mode") == "auto" and db.get_settings(conn)["mode"] != "auto":
+        current = db.get_settings(conn)
+        wanted_account = body.get("account_mode", current["account_mode"])
+        wanted_mode = body.get("mode", current["mode"])
+
+        # Leaving the live account while it still holds positions would strand
+        # them: the monitor is the only thing that closes a position, and it
+        # follows the account. Refuse, and say what is in the way.
+        if current["account_mode"] == "live" and wanted_account == "paper":
+            open_live = db.open_live_trades_any_account(conn, "live")
+            if open_live:
+                names = ", ".join(sorted({t["ticker"] for t in open_live}))
+                return jsonify({"error": (
+                    f"Close the live account's open positions first ({names}). "
+                    "Switching to paper would leave them unmanaged.")}), 409
+
+        # Real money needs the speed bumps; the paper account needs none of them.
+        going_live = (wanted_account == "live" and wanted_mode == "auto"
+                      and not (current["account_mode"] == "live" and current["mode"] == "auto"))
+        if going_live:
             if confirm != "LIVE":
                 return jsonify({"error": "Type LIVE to switch on live trading"}), 400
             failed = [c["name"] for c in services.preflight(context) if not c["ok"]]
@@ -128,7 +146,7 @@ def api_learn():
         settings = db.get_settings(conn)
         decisions = [r["decision"] for r in db.decisions_since(conn, since)]
         table, built_at = db.load_edge_table(conn)
-        closed = db.list_positions(conn, status="closed")
+        closed = db.list_positions(conn, account=settings["account_mode"], status="closed")
     finally:
         conn.close()
     min_n, min_exp = settings["edge_min_n"], settings["edge_min_expectancy"]

@@ -6,6 +6,8 @@ from tests import fakes as f
 from theta.storage import db
 from theta.engine import monitor
 
+ACCOUNT = "live"
+
 
 @pytest.fixture
 def conn(tmp_path):
@@ -20,7 +22,7 @@ def test_enter_sends_a_five_wide_combo_at_mid_and_records_it(conn):
     assert out == "entry sent: SPY 731/726 at $0.60 credit"
     [p] = b.placed
     assert (p["short"], p["long"], p["opening"], p["price"], p["qty"], p["gtc"]) == (f.SHORT, f.LONG, True, 0.60, 1, False)
-    [t] = db.list_live_trades(conn)
+    [t] = db.list_live_trades(conn, account=ACCOUNT)
     assert p["remark"] == f"csbot:{t['id']}"
     assert (t["state"], t["entry_order_id"], t["planned_credit"], t["ai_reason"]) == ("entering", "o1", 0.60, "no events this week")
     assert db.recent_order_events(conn)[0]["action"] == "place_entry"
@@ -66,7 +68,7 @@ def test_rejection_is_logged_and_three_in_a_row_pause(conn):
     s = db.get_settings(conn)
     assert s["bot_paused"] is True and "3 orders rejected" in s["bot_pause_reason"]
     assert len(svc["sent"]) == 1 and "Bot paused" in svc["sent"][0]
-    assert db.list_live_trades(conn) == []
+    assert db.list_live_trades(conn, account=ACCOUNT) == []
 
 
 def test_unlock_failure_pauses_immediately_and_says_to_unlock_in_opend(conn):

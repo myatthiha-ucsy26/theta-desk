@@ -125,7 +125,7 @@ def test_run_cycle_uses_open_positions_for_risk(db):
     path, conn = db
     store.save_edge_table(conn, EDGE, "2026-09-16T06:00:00+00:00")
     store.insert_position(conn, {
-        "id": "p1", "ticker": "AAA", "direction": "SELL_PUT", "short_strike": 95.0,
+        "id": "p1", "account": "paper", "ticker": "AAA", "direction": "SELL_PUT", "short_strike": 95.0,
         "long_strike": 90.0, "width": 5.0, "credit": 1.0, "contracts": 1,
         "entry_date": "2026-09-10", "expiry": "2026-09-25", "mode": "ivrich",
         "status": "open", "close_date": None, "close_pnl": None,

@@ -3,6 +3,8 @@ import pytest
 from theta.market import data as market_data
 from theta.storage import db
 
+ACCOUNT = "paper"
+
 
 @pytest.fixture
 def client(make_client, db_path, monkeypatch):
@@ -24,7 +26,7 @@ def _rows(path):
     conn = db.connect(path)
     db.init(conn)
     try:
-        return db.list_positions(conn)
+        return db.list_positions(conn, account=ACCOUNT)
     finally:
         conn.close()
 

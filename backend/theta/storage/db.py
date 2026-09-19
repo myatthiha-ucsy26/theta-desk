@@ -16,13 +16,14 @@ from theta import paths
 DEFAULT_PATH = os.path.join(paths.DATA, "engine.db")
 
 _POSITION_FIELDS = [
-    "id", "ticker", "direction", "short_strike", "long_strike", "width", "credit",
+    "id", "account", "ticker", "direction", "short_strike", "long_strike", "width", "credit",
     "contracts", "entry_date", "expiry", "mode", "status", "close_date", "close_pnl",
 ]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS positions (
     id TEXT PRIMARY KEY,
+    account TEXT NOT NULL DEFAULT 'paper',
     ticker TEXT NOT NULL,
     direction TEXT NOT NULL,
     short_strike REAL NOT NULL,
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS edge_stats (
 
 CREATE TABLE IF NOT EXISTS live_trades (
     id TEXT PRIMARY KEY,
+    account TEXT NOT NULL DEFAULT 'live',
     ticker TEXT NOT NULL,
     direction TEXT NOT NULL,
     expiry TEXT NOT NULL,
@@ -108,6 +110,22 @@ CREATE TABLE IF NOT EXISTS live_trades (
 );
 CREATE INDEX IF NOT EXISTS live_trades_state ON live_trades (state, opened_at);
 
+CREATE TABLE IF NOT EXISTS paper_orders (
+    order_id TEXT PRIMARY KEY,
+    short_code TEXT NOT NULL,
+    long_code TEXT NOT NULL,
+    opening INTEGER NOT NULL,
+    price REAL NOT NULL,
+    qty INTEGER NOT NULL,
+    remark TEXT NOT NULL,
+    status TEXT NOT NULL,
+    dealt_qty REAL NOT NULL DEFAULT 0,
+    fill_price REAL,
+    fees REAL NOT NULL DEFAULT 0,
+    placed_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS order_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts TEXT NOT NULL,
@@ -130,7 +148,11 @@ DTE_MIN, DTE_MAX = 1, 365
 # bear market, while trend's edge disappeared.
 DEFAULT_SETTINGS = {
     "engine_enabled": False,
+    # Whether the bot runs at all.
     "mode": "manual",
+    # Which broker it runs against. "paper" simulates fills from live quotes and
+    # touches no money; "live" places real orders through OpenD.
+    "account_mode": "paper",
     "watchlist": ["SPY", "QQQ", "META", "NVDA", "AMD", "PLTR", "AAPL", "MSFT", "AMZN", "GOOGL"],
     "modes": ["ivrich"],
     "dtes": [7, 14],
@@ -161,7 +183,14 @@ DEFAULT_SETTINGS = {
     "min_credit": 0.30,
     "bot_paused": False,
     "bot_pause_reason": "",
+    # Paper account. The fee is charged per leg per contract, on entry and again
+    # on exit: without it a 50% take-profit on a $0.30 credit reads far better on
+    # paper than it can be live.
+    "paper_starting_cash": 10000.0,
+    "paper_fee_per_contract": 0.65,
 }
+
+ACCOUNT_MODES = ("paper", "live")
 
 
 def connect(path=None):
@@ -174,10 +203,32 @@ def connect(path=None):
     return conn
 
 
+# Columns added after a table shipped. CREATE TABLE IF NOT EXISTS does nothing to
+# a table that already exists, so these are applied by hand on every open.
+_ADDED_COLUMNS = (
+    ("positions", "account", "TEXT NOT NULL DEFAULT 'paper'"),
+    ("live_trades", "account", "TEXT NOT NULL DEFAULT 'live'"),
+)
+
+
+def _migrate(conn):
+    """Add columns a previously created database is missing.
+
+    The defaults are what the existing rows already are: everything in
+    positions was hand-recorded paper, everything in live_trades was real.
+    """
+    for table, column, decl in _ADDED_COLUMNS:
+        have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if have and column not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.commit()
+
+
 def init(conn):
-    """Create any missing tables. Safe to call on every connection."""
+    """Create any missing tables and columns. Safe to call on every connection."""
     conn.executescript(_SCHEMA)
     conn.commit()
+    _migrate(conn)
 
 
 def _position_row(row):
@@ -187,7 +238,13 @@ def _position_row(row):
 
 
 def insert_position(conn, trade):
-    """Insert a position dict. Raises ValueError if the id already exists."""
+    """Insert a position dict. Raises ValueError if the id already exists.
+
+    `account` is required: the column default exists for rows written before
+    accounts did, not for new ones.
+    """
+    if not trade.get("account"):
+        raise ValueError("position needs an account")
     values = [trade.get(k) for k in _POSITION_FIELDS]
     ctx = trade.get("entry_context")
     values.append(json.dumps(ctx) if ctx is not None else None)
@@ -200,14 +257,19 @@ def insert_position(conn, trade):
     conn.commit()
 
 
-def list_positions(conn, status=None):
-    """All positions, oldest entry first, optionally filtered by status."""
-    if status is None:
-        rows = conn.execute("SELECT * FROM positions ORDER BY entry_date, id").fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM positions WHERE status = ? ORDER BY entry_date, id", (status,)
-        ).fetchall()
+def list_positions(conn, *, account, status=None):
+    """One account's positions, oldest entry first, optionally filtered by status.
+
+    `account` is required rather than defaulted: totalling a simulated book and a
+    funded one together is the kind of mistake that should not be one keyword
+    away.
+    """
+    sql = "SELECT * FROM positions WHERE account = ?"
+    args = [account]
+    if status is not None:
+        sql += " AND status = ?"
+        args.append(status)
+    rows = conn.execute(sql + " ORDER BY entry_date, id", args).fetchall()
     return [_position_row(r) for r in rows]
 
 
@@ -253,6 +315,12 @@ def _validate(key, value):
         raise ValueError(f"{key} must be {type(default).__name__}")
     if key == "mode" and value not in ("manual", "auto"):
         raise ValueError("mode must be 'manual' or 'auto'")
+    if key == "account_mode" and value not in ACCOUNT_MODES:
+        raise ValueError("account_mode must be 'paper' or 'live'")
+    if key == "paper_starting_cash" and value <= 0:
+        raise ValueError("paper_starting_cash must be above 0")
+    if key == "paper_fee_per_contract" and value < 0:
+        raise ValueError("paper_fee_per_contract cannot be negative")
     if key == "tp_pct" and not 0 < value < 100:
         raise ValueError("tp_pct must be between 0 and 100")
     if key == "sl_multiple" and value <= 0:
@@ -387,7 +455,7 @@ def load_edge_table(conn):
 ACTIVE_STATES = ("entering", "open", "closing")
 
 _LIVE_FIELDS = [
-    "id", "ticker", "direction", "expiry", "short_code", "long_code", "short_strike",
+    "id", "account", "ticker", "direction", "expiry", "short_code", "long_code", "short_strike",
     "long_strike", "width", "contracts", "planned_credit", "state", "entry_order_id",
     "entry_price", "entry_reprices", "credit", "tp_order_id", "tp_tif", "sl_hits",
     "close_order_id", "close_price", "close_reprices", "exit_reason", "close_debit",
@@ -396,6 +464,10 @@ _LIVE_FIELDS = [
 
 
 def insert_live_trade(conn, trade):
+    """Insert a bot trade. `account` is required: the column default exists for
+    rows written before accounts did, not for new ones."""
+    if not trade.get("account"):
+        raise ValueError("live trade needs an account")
     cols = [k for k in _LIVE_FIELDS if k in trade]
     conn.execute(
         f"INSERT INTO live_trades ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
@@ -418,15 +490,22 @@ def get_live_trade(conn, trade_id):
     return dict(row) if row else None
 
 
-def list_live_trades(conn, states=None):
-    if states is None:
-        rows = conn.execute("SELECT * FROM live_trades ORDER BY opened_at, id").fetchall()
-    else:
-        marks = ", ".join("?" for _ in states)
-        rows = conn.execute(
-            f"SELECT * FROM live_trades WHERE state IN ({marks}) ORDER BY opened_at, id", tuple(states)
-        ).fetchall()
-    return [dict(r) for r in rows]
+def list_live_trades(conn, states=None, *, account):
+    sql = "SELECT * FROM live_trades WHERE account = ?"
+    args = [account]
+    if states is not None:
+        sql += f" AND state IN ({', '.join('?' for _ in states)})"
+        args += list(states)
+    return [dict(r) for r in conn.execute(sql + " ORDER BY opened_at, id", args).fetchall()]
+
+
+def open_live_trades_any_account(conn, account):
+    """Trades still live in `account`. Used to refuse switching away from it."""
+    return [dict(r) for r in conn.execute(
+        f"SELECT * FROM live_trades WHERE account = ? AND state IN "
+        f"({', '.join('?' for _ in ACTIVE_STATES)}) ORDER BY opened_at, id",
+        [account, *ACTIVE_STATES],
+    ).fetchall()]
 
 
 def log_order_event(conn, ts, action, status, trade_id=None, order_id=None, price=None, reason=None):
@@ -456,24 +535,27 @@ def consecutive_rejections(conn):
     return n
 
 
-def bot_net_pnl(conn, since_ts=None):
-    sql = "SELECT COALESCE(SUM(pnl), 0) AS total FROM live_trades WHERE state = 'closed'"
-    args = ()
+def bot_net_pnl(conn, since_ts=None, *, account):
+    sql = ("SELECT COALESCE(SUM(pnl), 0) AS total FROM live_trades "
+           "WHERE state = 'closed' AND account = ?")
+    args = [account]
     if since_ts is not None:
         sql += " AND closed_at >= ?"
-        args = (since_ts,)
+        args.append(since_ts)
     return float(conn.execute(sql, args).fetchone()["total"])
 
 
-def bot_entries_since(conn, since_ts):
+def bot_entries_since(conn, since_ts, *, account):
     return conn.execute(
-        "SELECT COUNT(*) AS n FROM live_trades WHERE state != 'entry_cancelled' AND opened_at >= ?",
-        (since_ts,),
+        "SELECT COUNT(*) AS n FROM live_trades "
+        "WHERE state != 'entry_cancelled' AND opened_at >= ? AND account = ?",
+        (since_ts, account),
     ).fetchone()["n"]
 
 
-def cancelled_since(conn, ticker, since_ts):
+def cancelled_since(conn, ticker, since_ts, *, account):
     return conn.execute(
-        "SELECT COUNT(*) AS n FROM live_trades WHERE ticker = ? AND state = 'entry_cancelled' AND opened_at >= ?",
-        (ticker.upper(), since_ts),
+        "SELECT COUNT(*) AS n FROM live_trades WHERE ticker = ? AND state = 'entry_cancelled' "
+        "AND opened_at >= ? AND account = ?",
+        (ticker.upper(), since_ts, account),
     ).fetchone()["n"]

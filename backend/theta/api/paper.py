@@ -14,9 +14,10 @@ from theta.storage import db
 bp = Blueprint("paper", __name__)
 
 
-def _settle_due(conn, today):
+def _settle_due(conn, account, today):
     """Close any position whose expiry has passed, at that day's close."""
-    for t in settle.due_for_settlement(db.list_positions(conn, status="open"), today):
+    for t in settle.due_for_settlement(
+            db.list_positions(conn, account=account, status="open"), today):
         exp = dt.date.fromisoformat(t["expiry"])
         try:
             df = market_data.fetch_klines(
@@ -36,10 +37,12 @@ def api_paper():
     conn = ctx().connect()
     today = dt.date.today()
     try:
-        _settle_due(conn, today)
-        open_positions = db.list_positions(conn, status="open")
-        closed_positions = db.list_positions(conn, status="closed")
-        risk_cap = db.get_settings(conn)["max_deployed_risk"]
+        settings = db.get_settings(conn)
+        account = settings["account_mode"]
+        _settle_due(conn, account, today)
+        open_positions = db.list_positions(conn, account=account, status="open")
+        closed_positions = db.list_positions(conn, account=account, status="closed")
+        risk_cap = settings["max_deployed_risk"]
     finally:
         conn.close()
 
@@ -62,6 +65,7 @@ def api_paper():
     return jsonify({
         "open": open_list,
         "closed": closed_positions,
+        "account": account,
         "stats": {
             "total_pnl": round(sum(closed_pnls), 2),
             "wins": wins,
@@ -110,6 +114,7 @@ def api_paper_open():
 
     conn = ctx().connect()
     try:
+        trade["account"] = db.get_settings(conn)["account_mode"]
         db.insert_position(conn, trade)
     finally:
         conn.close()
@@ -125,7 +130,8 @@ def api_paper_close():
 
     conn = ctx().connect()
     try:
-        trade = next((t for t in db.list_positions(conn, status="open")
+        account = db.get_settings(conn)["account_mode"]
+        trade = next((t for t in db.list_positions(conn, account=account, status="open")
                       if t["id"] == trade_id), None)
         if trade is None:
             return jsonify({"error": "open trade not found"}), 404
@@ -155,7 +161,8 @@ def api_size_preview():
     conn = ctx().connect()
     try:
         settings = db.get_settings(conn)
-        open_positions = db.list_positions(conn, status="open")
+        open_positions = db.list_positions(conn, account=settings["account_mode"],
+                                           status="open")
     finally:
         conn.close()
     max_loss = float(spread["max_loss"])

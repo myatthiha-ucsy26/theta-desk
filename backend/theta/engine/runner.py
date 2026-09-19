@@ -99,7 +99,8 @@ def run_cycle(conn, settings, services, now_fn=utc_now, sleep=time.sleep):
         "closes": services["closes"],
         "ai_review": services["ai_review"],
         "edge_table": edge_table,
-        "open_positions": db.list_positions(conn, status="open"),
+        "open_positions": db.list_positions(conn, account=settings["account_mode"],
+                                            status="open"),
         "recently_alerted": lambda key: db.alerted_since(conn, key, iso(now_fn() - cooldown)),
     }
     decisions = []

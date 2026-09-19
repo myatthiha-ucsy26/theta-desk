@@ -4,9 +4,11 @@ import pytest
 from theta.market import data as market_data
 from theta.storage import db
 
+ACCOUNT = "paper"
+
 
 EXPIRED = {
-    "id": "pt_test_1",
+    "account": ACCOUNT, "id": "pt_test_1",
     "ticker": "TEST",
     "direction": "SELL_PUT",
     "short_strike": 100.0,
@@ -36,7 +38,7 @@ def db_with_expired(db_path):
 def _saved(path):
     conn = db.connect(path)
     try:
-        return db.list_positions(conn)[0]
+        return db.list_positions(conn, account=ACCOUNT)[0]
     finally:
         conn.close()
 

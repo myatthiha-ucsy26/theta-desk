@@ -2,6 +2,8 @@ import pytest
 
 from theta.storage import db
 
+ACCOUNT = "live"
+
 
 @pytest.fixture
 def conn(tmp_path):
@@ -13,7 +15,8 @@ def conn(tmp_path):
 
 def trade(id="t1", **over):
     t = {
-        "id": id, "ticker": "SPY", "direction": "SELL_PUT", "expiry": "2026-09-30",
+        "id": id, "account": ACCOUNT, "ticker": "SPY", "direction": "SELL_PUT",
+        "expiry": "2026-09-30",
         "short_code": "US.SPY260930P731000", "long_code": "US.SPY260930P726000",
         "short_strike": 731.0, "long_strike": 726.0, "width": 5.0, "contracts": 1,
         "planned_credit": 0.60, "state": "entering", "entry_order_id": "o1", "entry_price": 0.60,
@@ -40,8 +43,8 @@ def test_update_rejects_unknown_field(conn):
 def test_list_live_trades_filters_by_state_oldest_first(conn):
     db.insert_live_trade(conn, trade("b", opened_at="2026-09-16T16:00:00+00:00", state="open"))
     db.insert_live_trade(conn, trade("a", opened_at="2026-09-16T15:00:00+00:00", state="closed"))
-    assert [t["id"] for t in db.list_live_trades(conn)] == ["a", "b"]
-    assert [t["id"] for t in db.list_live_trades(conn, db.ACTIVE_STATES)] == ["b"]
+    assert [t["id"] for t in db.list_live_trades(conn, account=ACCOUNT)] == ["a", "b"]
+    assert [t["id"] for t in db.list_live_trades(conn, db.ACTIVE_STATES, account=ACCOUNT)] == ["b"]
 
 
 def test_order_events_newest_first_and_rejection_streak(conn):
@@ -59,11 +62,11 @@ def test_bot_pnl_entries_and_cancellations(conn):
     db.insert_live_trade(conn, trade("w", state="closed", pnl=120.0, closed_at="2026-09-15T15:00:00+00:00"))
     db.insert_live_trade(conn, trade("l", state="closed", pnl=-40.0, closed_at="2026-09-16T15:00:00+00:00"))
     db.insert_live_trade(conn, trade("c", state="entry_cancelled"))
-    assert db.bot_net_pnl(conn) == 80.0
-    assert db.bot_net_pnl(conn, since_ts="2026-09-16T00:00:00+00:00") == -40.0
-    assert db.bot_entries_since(conn, "2026-09-14T04:00:00+00:00") == 2
-    assert db.cancelled_since(conn, "SPY", "2026-09-16T00:00:00+00:00") == 1
+    assert db.bot_net_pnl(conn, account=ACCOUNT) == 80.0
+    assert db.bot_net_pnl(conn, since_ts="2026-09-16T00:00:00+00:00", account=ACCOUNT) == -40.0
+    assert db.bot_entries_since(conn, "2026-09-14T04:00:00+00:00", account=ACCOUNT) == 2
+    assert db.cancelled_since(conn, "SPY", "2026-09-16T00:00:00+00:00", account=ACCOUNT) == 1
 
 
 def test_bot_net_pnl_is_zero_with_no_closed_trades(conn):
-    assert db.bot_net_pnl(conn) == 0.0
+    assert db.bot_net_pnl(conn, account=ACCOUNT) == 0.0
