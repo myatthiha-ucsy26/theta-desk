@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      // Apply the theme before the first paint, using the same rule as src/lib/theme.ts:
+      // a stored choice wins, otherwise follow the system. Without this, dark-mode users
+      // see the light theme flash until the app's JavaScript loads.
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem("theme"); } catch (e) {}
+        if (t !== "light" && t !== "dark") {
+          t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.dataset.theme = t;
+      })();
+    </script>
+    <script>
+      // Same idea for the design template: the stored choice, applied before the first paint
+      // so a template's CSS never flashes the default on the way in.
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem("template"); } catch (e) {}
+        document.documentElement.dataset.template = t || "broadsheet";
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cellipse cx='8' cy='8' rx='4.8' ry='6.2' fill='none' stroke='%233d6e94' stroke-width='2'/%3E%3Cpath d='M3.2 8h9.6' stroke='%233d6e94' stroke-width='2'/%3E%3C/svg%3E" />
+    <title>Theta Desk</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

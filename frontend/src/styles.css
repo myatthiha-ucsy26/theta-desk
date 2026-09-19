@@ -1,0 +1,821 @@
+@import "tailwindcss";
+/* Broadsheet type: Newsreader is the headline serif, Libre Franklin the newsroom body face.
+   JetBrains Mono survives only for genuine terminal output (the log, the order log).
+   Neural Quant Terminal adds Space Grotesk for structural headings and Inter for interface
+   prose, and promotes JetBrains Mono to the face every number is read in. */
+@import "@fontsource/newsreader/400.css";
+@import "@fontsource/newsreader/500.css";
+@import "@fontsource/newsreader/600.css";
+@import "@fontsource/newsreader/700.css";
+@import "@fontsource/newsreader/400-italic.css";
+@import "@fontsource/libre-franklin/400.css";
+@import "@fontsource/libre-franklin/500.css";
+@import "@fontsource/libre-franklin/600.css";
+@import "@fontsource/libre-franklin/700.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+
+/* The theme lives on <html data-theme>; utilities read these variables so every screen switches with it. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  /* The faces are looked up through --face-*, so a template can change the type as well as the
+     colour. Without the indirection Tailwind inlines the family into the utility and no
+     template could reach it. */
+  --font-sans: var(--face-sans);
+  --font-display: var(--face-display);
+  --font-mono: var(--face-mono);
+
+  --color-paper: var(--paper);       /* the page itself */
+  --color-sheet: var(--sheet);       /* a lifted reading surface: nav, tape, cards */
+  --color-well: var(--well);         /* recessed: table heads, inputs, meter tracks */
+  --color-ink: var(--ink);           /* primary text */
+  --color-ink-2: var(--ink-2);       /* secondary text, eyebrows, footnotes */
+  --color-rule: var(--rule);         /* hairlines */
+  --color-rule-strong: var(--rule-strong);
+  --color-profit: var(--profit);     /* credit, profit: text on paper */
+  --color-loss: var(--loss);
+  --color-accent: var(--accent);     /* press blue: links, focus, selection, IV ramp */
+  --color-good: var(--good);         /* status: always with glyph + word */
+  --color-warn: var(--warn);
+  --color-critical: var(--critical);
+
+  --animate-toast: toast-in 160ms ease-out;
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  --animate-drawer: drawer-in 180ms ease-out;
+  @keyframes drawer-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+}
+
+/* Morning edition: warm newsprint and dark print inks. Every text colour checked at
+   >= 4.5:1 on --sheet. Profit and loss differ in lightness as well as hue, so a
+   red-green colour blindness still separates them (5.3:1 vs 8.5:1 against the page).
+   These are Template 1's tokens: the second selector lets a thumbnail be scoped back to
+   this template while another one is active. */
+:root,
+[data-template="broadsheet"] {
+  color-scheme: light;
+  --face-sans: "Libre Franklin", system-ui, sans-serif;
+  --face-display: "Newsreader", Georgia, serif;
+  --face-mono: "JetBrains Mono", ui-monospace, monospace;
+  --paper: #f7f4ee;
+  --sheet: #fffdf9;
+  --well: #efe9df;
+  --ink: #191713;
+  --ink-2: #6b6459;
+  --rule: #ddd6c9;
+  --rule-strong: #b8ae9c;
+  --profit: #26794f;
+  --loss: #8f2419;
+  --accent: #1c3f5c;
+  --good: #26794f;
+  --warn: #8a5a12;
+  --critical: #8f2419;
+  --shadow-sheet: 0 0 0 1px var(--rule);
+  --shadow-lift: 0 0 0 1px var(--rule-strong), 0 18px 36px -12px rgb(25 23 19 / 0.22);
+  /* Square by intent: a printed sheet has no soft corners. */
+  --radius: 0px;
+  --radius-lg: 0px;
+}
+
+/* Night edition: deep ink navy with paper-coloured text, so the 9:30 PM–4:00 AM
+   sessions are not read off a cold white glare. */
+:root[data-theme="dark"],
+[data-template="broadsheet"][data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0c1017;
+  --sheet: #10151e;
+  --well: #151c27;
+  --ink: #e8e3d9;
+  --ink-2: #9a958a;
+  --rule: #232a35;
+  --rule-strong: #38414f;
+  --profit: #6fd39b;
+  --loss: #e0776a;
+  --accent: #7db3dd;
+  --good: #6fd39b;
+  --warn: #d8a32e;
+  --critical: #e0776a;
+  --shadow-sheet: 0 0 0 1px var(--rule);
+  --shadow-lift: 0 0 0 1px var(--rule-strong), 0 18px 40px -12px rgb(0 0 0 / 0.6);
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--face-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  accent-color: var(--accent);
+}
+
+@layer base {
+  /* Figures set like a printed financial table: the sans face, tabular, no rules between rows
+     beyond a hairline. Mono is confined to .log, which really is terminal output. */
+  table { font-family: var(--face-sans); font-size: 0.8125rem; }
+  thead tr { background: transparent; }
+  thead th {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  tbody tr { transition: background-color 120ms; }
+  tbody tr:hover { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+  tbody td { border-bottom: 1px solid var(--rule); }
+  input, select, textarea { font-family: var(--face-sans); }
+  /* Tailwind 4's preflight dropped the hand cursor from buttons, so every control you can press
+     has to ask for it back — under the arrow a button reads as part of the page rather than
+     something to hit. Disabled ones are left out and keep the not-allowed cursor instead. */
+  button:not(:disabled) { cursor: pointer; }
+  ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+}
+
+@layer components {
+  /* The newspaper eyebrow: letterspaced caps over a figure. */
+  .eyebrow {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  /* A headline figure, set in the serif with lining tabular figures. */
+  .figure {
+    font-family: var(--face-display);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.005em;
+  }
+  /* Terminal output only. */
+  .log {
+    font-family: var(--face-mono);
+    font-size: 0.75rem;
+  }
+  /* Section and folio rules. A heavier rule opens a section, a hairline closes a head. */
+  .rule-heavy { border-top: 2px solid var(--ink); }
+  .rule-hair { border-top: 1px solid var(--rule); }
+  /* The masthead nameplate sits on a rule that is heavier than any other line on the page. */
+  .rule-nameplate { border-top: 3px double var(--ink); }
+  /* Numbers in a table column. */
+  .num { font-variant-numeric: tabular-nums lining-nums; text-align: right; }
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ── Template 2 · Neural Quant Terminal ─────────────────────────────────────────────────
+   A high-density quant workstation. A cool slate substrate with white panels contained by
+   hairlines rather than lifted on shadows; an electric-sky accent on anything interactive;
+   and three tiers of type doing three jobs — Space Grotesk for structural headings, Inter
+   for interface prose, JetBrains Mono for every number, strike and timestamp, so a column of
+   figures never shifts as it ticks.
+   Geometry is compact by intent: 4px on anything you click or type into, 8px on a container.
+   Pills are not used — in a column of monospaced figures a pill spends horizontal density on
+   nothing — so status is carried by tinted chips instead, and a circle is reserved for a
+   heartbeat light.
+   The token selectors are plain attributes, not :root, so a thumbnail can be scoped to a
+   template that is not the active one. */
+[data-template="minimal"] {
+  color-scheme: light;
+  --face-sans: "Inter", system-ui, sans-serif;
+  --face-display: "Space Grotesk", system-ui, sans-serif;
+  --face-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* Slate substrate: the canvas reads a shade below the panel, and an inset a shade above it. */
+  --paper: #f8fafc;
+  --sheet: #ffffff;
+  --well: #f1f5f9;
+  --ink: #0f172a;
+  --ink-2: #64748b;
+  --rule: #e2e8f0;
+  --rule-strong: #cbd5e1;
+  --profit: #059669;
+  --loss: #e11d48;
+  --accent: #0284c7;
+  --accent-soft: #e0f2fe;
+  --good: #059669;
+  --warn: #b45309;
+  --critical: #e11d48;
+  /* Depth is containment, not diffusion: a hairline ring at rest, a sky keyline when focused. */
+  --shadow-sheet: 0 0 0 1px var(--rule);
+  --shadow-lift: 0 4px 16px -2px rgb(15 23 42 / 0.08);
+  --radius: 4px;
+  --radius-lg: 8px;
+}
+
+/* Night session: the same slate ladder, read from the other end — canvas darkest, panel a
+   tier above it, inset above that. */
+[data-template="minimal"][data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0f172a;
+  --sheet: #1e293b;
+  --well: #334155;
+  --ink: #f1f5f9;
+  --ink-2: #94a3b8;
+  --rule: #334155;
+  --rule-strong: #475569;
+  --profit: #34d399;
+  --loss: #fb7185;
+  --accent: #38bdf8;
+  --accent-soft: #0c4a6e;
+  --good: #34d399;
+  --warn: #fbbf24;
+  --critical: #fb7185;
+  --shadow-lift: 0 4px 16px -2px rgb(0 0 0 / 0.5);
+}
+
+/* Labels are terminal micro-caps: mono, wide-tracked, and never louder than the data. */
+[data-template="minimal"] .eyebrow {
+  font-family: var(--face-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+/* A headline figure is a data readout, so it is set in the data face. */
+[data-template="minimal"] .figure {
+  font-family: var(--face-mono);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+[data-template="minimal"] .num { font-family: var(--face-mono); }
+[data-template="minimal"] .rule-nameplate { border-top: 0; }
+/* A data grid: a tinted header row in mono micro-caps over compact rows. */
+[data-template="minimal"] table { font-family: var(--face-mono); font-size: 12px; }
+[data-template="minimal"] thead tr { background: var(--well); }
+[data-template="minimal"] thead th {
+  height: 28px;
+  font-family: var(--face-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--rule);
+}
+[data-template="minimal"] tbody td { border-bottom: 1px solid var(--rule); }
+/* No warm tint under the pointer — the substrate's own inset, the way a data grid behaves. */
+[data-template="minimal"] tbody tr:hover { background: var(--well); }
+/* A section is a contained panel: a white surface held by a hairline, with its title on a
+   tinted header bar rather than floating loose on the page. */
+[data-template="minimal"] .panel {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--sheet);
+  padding: 0;
+  overflow: hidden;
+}
+[data-template="minimal"] .panel-head {
+  align-items: center;
+  background: var(--well);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.625rem 1rem;
+}
+[data-template="minimal"] .panel-body { padding: 1rem; }
+[data-template="minimal"] .panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+/* Controls take the compact corner. A joined set must square its seams, or the segments
+   come apart at the join. */
+[data-template="minimal"] button,
+[data-template="minimal"] input,
+[data-template="minimal"] select,
+[data-template="minimal"] textarea { border-radius: var(--radius); }
+[data-template="minimal"] .seg { border-radius: 0; }
+[data-template="minimal"] .seg:first-child {
+  border-top-left-radius: var(--radius);
+  border-bottom-left-radius: var(--radius);
+}
+[data-template="minimal"] .seg:last-child {
+  border-top-right-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+/* The rail reads in three registers — the desk, the sections, the session — and a hairline
+   indexes each, so the eye finds the current screen without reading every row. The rules are a
+   desk arrangement only: on a phone the rail is a bar across the top, where they would be edges
+   to nothing. */
+[data-template="minimal"] .rail { background: var(--sheet); }
+[data-template="minimal"] .rail-group {
+  font-family: var(--face-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+/* The section's place in the pipeline is a numeral, not a glyph: the five screens are worked in
+   order, and a number says that where an icon only says which. It gets a box of its own, so every
+   label starts at the same x whatever sits in front of it. */
+[data-template="minimal"] .rail-icon {
+  display: flex;
+  flex: none;
+  color: var(--ink-2);
+  transition: color 120ms ease;
+}
+[data-template="minimal"] .rail-link {
+  border-radius: var(--radius);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+[data-template="minimal"] .rail-link:hover { background: var(--well); }
+[data-template="minimal"] .rail-link:hover .rail-icon { color: var(--ink); }
+/* The tint says which row you are on, and the dot says it again at the far end of the row, where
+   the eye lands after reading the name. Accent on the tint is 3.6:1 — the current page would read
+   dimmer than the ones you are not on — so the name stays ink and the accent goes to the glyph
+   and the dot. */
+[data-template="minimal"] .rail-link[aria-current="page"] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+[data-template="minimal"] .rail-link[aria-current="page"] .rail-icon { color: var(--accent); }
+[data-template="minimal"] .rail-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--accent);
+}
+@media (min-width: 900px) {
+  [data-template="minimal"] .rail-head {
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 1.25rem;
+  }
+  [data-template="minimal"] .rail-foot {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.25rem;
+  }
+}
+/* The descriptor belongs to the name above it, so it sits close and reads small; the air in the
+   rail goes between sections, not inside one. */
+[data-template="minimal"] .rail-sub { font-size: 11px; line-height: 1.35; color: var(--ink-2); }
+[data-template="minimal"] .switch { border-radius: var(--radius); }
+/* The ledger band: each figure its own contained tile, rather than a column behind a divider.
+   The label rides above a row of cards that draw their own top edge, so it drops the rule
+   Broadsheet hangs the figures from and takes real space instead of sitting flush on the card. */
+[data-template="minimal"] .ledger-band h2 {
+  border-bottom-width: 0;
+  padding-bottom: 0;
+  margin-bottom: 0.625rem;
+}
+[data-template="minimal"] .ledger-band dl { gap: 0.75rem; }
+[data-template="minimal"] .ledger-band dl > div { border-inline-start-width: 0; }
+[data-template="minimal"] .ledger-card,
+[data-template="minimal"] .stat-tile,
+[data-template="minimal"] .stat-card,
+[data-template="minimal"] .pos-card,
+[data-template="minimal"] .scan-card {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--sheet);
+}
+[data-template="minimal"] .ledger-card { padding: 0.75rem 0.875rem; }
+[data-template="minimal"] .stat-tile {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.25rem;
+  padding: 0.75rem 0.875rem;
+}
+[data-template="minimal"] .stat-tile .figure { font-size: 20px; }
+/* `align-items: flex-start` sizes the label and figure to their own text rather than to the tile,
+   so a reading wider than its tile (a short / long pair) renders past the card edge and lands on
+   the neighbour. Cap the children at the tile they sit in; they truncate instead of spilling. */
+[data-template="minimal"] .stat-tile > * { max-width: 100%; }
+/* The exposure matrix is the reading a desk checks first, so its figure carries more weight than
+   a study tile's and the second reading sits under it in the quiet register. */
+[data-template="minimal"] .stat-card { padding: 0.875rem 1rem; }
+[data-template="minimal"] .stat-card .figure {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+[data-template="minimal"] .stat-sub {
+  font-family: var(--face-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+/* Filters are chips, not pills: sized like the data they filter. */
+[data-template="minimal"] .pill {
+  border-radius: var(--radius);
+  padding: 0.1875rem 0.5rem;
+  font-family: var(--face-mono);
+  font-size: 11px;
+  font-weight: 500;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+[data-template="minimal"] .pill[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+/* A card you can open says so with a keyline, not by leaving the page: depth here is
+   containment, so the edge changes rather than a shadow growing under it. */
+[data-template="minimal"] .scan-card { padding: 0.75rem 0.875rem; }
+[data-template="minimal"] .pos-card { padding: 0.875rem 1rem; }
+[data-template="minimal"] .scan-card,
+[data-template="minimal"] .pos-card { transition: border-color 120ms ease, box-shadow 120ms ease; }
+[data-template="minimal"] .scan-card:hover,
+[data-template="minimal"] .pos-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 1px 3px rgb(2 132 199 / 0.08);
+}
+/* A spread card carries a spine down its left edge in the colour of the side of the bet it is on:
+   a put spread earns while the market holds up or rises, a call spread while it falls. The
+   direction is written out beside the ticker too, so the colour repeats a word rather than being
+   the only place the side is said — which is what keeps the card readable when the two hues look
+   alike. It sits below the hover rule so the spine stays the card's own while the ring says the
+   panel has it. */
+[data-template="minimal"] .pos-card.spine-put,
+[data-template="minimal"] .pos-card.spine-call { border-left-width: 3px; }
+[data-template="minimal"] .pos-card.spine-put { border-left-color: var(--profit); }
+[data-template="minimal"] .pos-card.spine-call { border-left-color: var(--accent); }
+/* The card's readings sit in a strip of their own rather than loose in the middle of it: they are
+   one block of priced figures, and the box says so. */
+[data-template="minimal"] .pos-strip {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--well);
+}
+/* The pipeline strip: six tiles read left to right, each one a stage rather than a card you
+   open. Flat inset against the panel, because the strip is part of the panel's own head. */
+[data-template="minimal"] .gate-tile {
+  gap: 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+[data-template="minimal"] .gate-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--accent);
+}
+/* A chip is a fact about the row, not a control: mono, flat, sized to its own text. */
+[data-template="minimal"] .chip {
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--well);
+  padding: 0.0625rem 0.375rem;
+  font-family: var(--face-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+/* Where the row ended, in the one glance a colour gives: a dot at the head of the line. */
+[data-template="minimal"] .track-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--ink-2);
+}
+[data-template="minimal"] .track-dot-alert { background: var(--profit); }
+[data-template="minimal"] .track-dot-near-miss { background: var(--warn); }
+[data-template="minimal"] .track-dot-rejected { background: var(--rule-strong); }
+[data-template="minimal"] .track-dot-error { background: var(--critical); }
+/* A gate cell is that gate's own reading, set flat under the row it decided. */
+[data-template="minimal"] .gate-cell {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--well);
+  padding: 0.3125rem 0.5rem;
+}
+/* Why a row stopped, hung off the keyline the row's own status colour runs down. */
+[data-template="minimal"] .reject-note {
+  border-left: 2px solid var(--critical);
+  padding-left: 0.625rem;
+}
+[data-template="minimal"] .reject-note-near-miss { border-left-color: var(--warn); }
+/* What the engine made of the row, set as a quotation rather than another tile: it is
+   reasoning, and reasoning belongs in prose. */
+[data-template="minimal"] .opinion-card {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--well);
+  padding: 0.625rem 0.75rem;
+}
+
+/* A meter is a level indicator, not a hairline rule: the track takes the strong border, the
+   one token that stays legible both on a white panel and on the dark surface. */
+[data-template="minimal"] .meter-track {
+  height: 5px;
+  border-width: 0;
+  border-radius: 2px;
+  background: var(--rule-strong);
+  overflow: hidden;
+}
+[data-template="minimal"] .meter-bar { border-radius: 2px; }
+/* A footnote that carries weight, set as a quiet aside rather than a rule down the margin. */
+[data-template="minimal"] .note-card {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--well);
+  padding: 0.625rem 0.75rem;
+}
+/* The funnel as numbered steps: the count is a tag, the share is the bar. */
+[data-template="minimal"] .step-num {
+  display: grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--face-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+[data-template="minimal"] .step-track {
+  display: block;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--rule-strong);
+  overflow: hidden;
+}
+[data-template="minimal"] .step-bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+/* The funnel's gates read as rows rather than as a bar chart: each one names what it tests and how
+   many scans it turned away, and the bar underneath is the share that got through. */
+[data-template="minimal"] .gate-row {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--well);
+  padding: 0.625rem 0.75rem;
+}
+/* The gate doing the rejecting is the one worth finding, so it takes the accent down its edge —
+   the same spine a spread card wears. It is not filled: a tinted row among plain ones reads as a
+   row you are pointing at, and this one is saying something about itself, not about the cursor. */
+[data-template="minimal"] .gate-row-key { border-left-color: var(--accent); }
+/* A gate you can open says so under the pointer and under a keyboard focus: the row takes the
+   accent ring and the soft accent wash the tags use. The first pass only lifted the row from the
+   well to the sheet, which is a two-percent change and read as nothing at all — a hover that
+   cannot be seen is worse than no hover, because the row still looks inert while being a link. */
+[data-template="minimal"] a.gate-row { transition: background-color 120ms ease, border-color 120ms ease; }
+[data-template="minimal"] a.gate-row:hover,
+[data-template="minimal"] a.gate-row:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+[data-template="minimal"] .gate-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--rule);
+  background: var(--sheet);
+  color: var(--ink-2);
+  font-family: var(--face-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 0.125rem 0.375rem;
+}
+/* The accent tag the step numbers use: the soft fill under the accent ink, which is the one pair
+   that stays legible on both the light panel and the dark surface. */
+[data-template="minimal"] .gate-row-key .gate-badge {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* Two series drawn across one scale, so a bar means the same length whichever side of the
+   comparison it is on. Expectancy is signed, so both are drawn from a shared centre: a bar to the
+   right earned per trade, to the left lost, and the colour names which series it is. The two
+   colours are the desk's accent and its quiet register rather than profit and loss, because a
+   losing paper bar in green would say the opposite of what it means — the sign is in the number
+   beside it, set in the tone that carries it. */
+[data-template="minimal"] .pair-track {
+  position: relative;
+  height: 0.875rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--well);
+  overflow: hidden;
+}
+[data-template="minimal"] .pair-axis {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--rule-strong);
+}
+[data-template="minimal"] .pair-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  transition: width 240ms ease;
+}
+[data-template="minimal"] .pair-bar-backtest { background: var(--accent); }
+[data-template="minimal"] .pair-bar-paper { background: var(--ink-2); }
+
+/* ---- Settings: a governed desk reads as sections, and each section as a run of cards ---- */
+/* A section heading is a glyph, its name, and the hairline that runs out to the right edge, so
+   the page reads as a contents list rather than as a column of panels all weighing the same. */
+[data-template="minimal"] .sx-section { display: flex; flex-direction: column; gap: 0.875rem; }
+[data-template="minimal"] .sx-section-head { display: flex; align-items: center; gap: 0.625rem; }
+[data-template="minimal"] .sx-section-icon {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--well);
+  color: var(--accent);
+}
+[data-template="minimal"] .sx-section-rule { flex: 1; height: 1px; background: var(--rule); }
+/* The page title is a structural heading, so it takes the display face — the one place on this
+   screen where type is doing something other than reporting a value. */
+[data-template="minimal"] .sx-title {
+  font-family: var(--face-display);
+  font-size: 1.625rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+/* A card is one reading: a caption, a figure, and whatever the figure needs to be understood. */
+[data-template="minimal"] .sx-card {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--well);
+  padding: 0.875rem 1rem;
+}
+/* Two shares of one budget, drawn on one track: what is committed and what is left. A single
+   split bar rather than two meters, because the two numbers are only meaningful against
+   each other — headroom alone says nothing about how much of the cap is already spent.
+   Both editions draw this one: it reads off tokens the two of them share. */
+.sx-split {
+  display: flex;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--rule-strong);
+  overflow: hidden;
+}
+.sx-split-used { background: var(--accent); transition: width 240ms ease; }
+.sx-split-free { flex: 1; }
+/* A slot tile: filled when the desk holds the slot, dashed when it is still being earned. */
+[data-template="minimal"] .sx-slot {
+  display: grid;
+  place-items: center;
+  height: 2.25rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--sheet);
+  color: var(--ink-2);
+  font-family: var(--face-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+[data-template="minimal"] .sx-slot-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+[data-template="minimal"] .sx-slot-off { border-style: dashed; }
+/* The slider is the same control as the field beside it, so it takes the desk's accent rather
+   than the platform's blue. Shared, like the split bar above it. */
+.sx-range { width: 100%; accent-color: var(--accent); }
+/* Focus is a keyline: square, flat, and with no blur bleeding into the neighbouring cell. */
+[data-template="minimal"] :focus-visible { outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Market tape: the track holds the price list twice; sliding it by exactly half loops seamlessly. */
+@keyframes tape-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.tape-viewport {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+}
+.tape-track {
+  display: flex;
+  width: max-content;
+  animation: tape-marquee var(--marquee-duration, 40s) linear infinite;
+}
+.tape-viewport:hover .tape-track,
+.tape-viewport:focus-within .tape-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tape-track { animation: none; }
+}
+
+/* A running engine cycle: the state dot ripples, and a light sweeps the rule under the figures.
+   Both are indeterminate on purpose — the engine reports no percentage, so nothing here claims
+   a position in the cycle, only that one is running. */
+@keyframes scan-ripple {
+  from { transform: scale(1); opacity: 0.55; }
+  to { transform: scale(3.2); opacity: 0; }
+}
+@keyframes scan-sweep {
+  from { background-position: -60% 0; }
+  to { background-position: 160% 0; }
+}
+/* The card catches the light while a cycle runs: two soft bands of the live green crossing the
+   panel behind its own content, so the whole surface reads as working rather than just one
+   line of it. The same green as the state dot, kept faint and behind the text, so every
+   figure stays plain to read. */
+@keyframes scan-wash {
+  from { background-position: -70% 0, 170% 0; }
+  to { background-position: 170% 0, -70% 0; }
+}
+.scan-dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 9999px;
+  background: var(--ink-2);
+}
+.scan-dot-good { background: var(--good); }
+.scan-dot-warn { background: var(--warn); }
+.scan-dot-critical { background: var(--critical); }
+.scan-dot-live { position: relative; }
+.scan-dot-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: inherit;
+  animation: scan-ripple 1.6s ease-out infinite;
+}
+.scan-sweep {
+  background-image: linear-gradient(90deg, transparent, var(--good) 50%, transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: scan-sweep 1.5s linear infinite;
+}
+/* Scoped past the panel rule above, which sets the surface's own background as a shorthand. */
+[data-template="minimal"] .panel.scan-wash {
+  background-image:
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--good) 16%, transparent) 50%, transparent),
+    linear-gradient(90deg, transparent, color-mix(in srgb, var(--good) 10%, transparent) 50%, transparent);
+  background-size: 55% 100%, 35% 100%;
+  background-repeat: no-repeat;
+  animation: scan-wash 2.8s linear infinite;
+}
+/* Without motion the ripple has nowhere to go, so a cycling dot stands still and the sweep
+   becomes a solid rule: the same reading, held rather than animated. */
+@media (prefers-reduced-motion: reduce) {
+  .scan-dot-live::after { display: none; }
+  .scan-sweep { background-image: none; background-color: var(--good); }
+  [data-template="minimal"] .panel.scan-wash { background-image: none; }
+}
+
+/* Scrollbars follow the theme and stay slim on every scroll area.
+   Chromium and Safari: 6px bars from the ::-webkit-scrollbar rules. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--rule-strong);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ink-2);
+}
+/* Firefox has no ::-webkit-scrollbar, so it gets the standard properties instead.
+   They are scoped here on purpose: in Chromium they would override the 6px size above. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule-strong) transparent;
+  }
+}
