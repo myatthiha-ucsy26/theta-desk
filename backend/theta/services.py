@@ -8,14 +8,27 @@ import datetime as dt
 
 from theta import signals
 from theta import notify
+from theta.broker.paper import PaperBroker
 from theta.market import data as market_data
-from theta.engine import monitor
+from theta.engine import monitor, runner
+
+
+def broker_for(ctx, account_mode):
+    """The broker this account trades through.
+
+    Paper gets a simulator that fills from live quotes; live gets the real one.
+    The monitor cannot tell them apart, which is what makes paper mode worth
+    anything: it exercises the same code.
+    """
+    if account_mode == "paper":
+        return PaperBroker(ctx.connect, market_data.quotes, runner.utc_now, ctx.settings)
+    return ctx.broker
 
 
 def bot_services(ctx):
     """What the position monitor needs: quotes, legs, a broker and two outbound calls."""
     return {
-        "broker": ctx.broker,
+        "broker": broker_for(ctx, ctx.settings()["account_mode"]),
         "quotes": market_data.quotes,
         "legs": market_data.fetch_legs,
         "spot": market_data.get_spot,

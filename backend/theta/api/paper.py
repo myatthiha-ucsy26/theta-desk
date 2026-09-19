@@ -4,7 +4,7 @@ import uuid
 
 from flask import Blueprint, jsonify, request
 
-from theta import paper
+from theta import paper, services
 from theta.broker import account, manage, settle
 from theta.context import ctx
 from theta.engine import scan
@@ -80,8 +80,19 @@ def api_paper():
 
 @bp.route("/api/account")
 def api_account():
+    """The funded account, or the simulated one while trading on paper."""
+    context = ctx()
+    settings = context.settings()
+    if settings["account_mode"] == "paper":
+        broker = services.broker_for(context, "paper")
+        return jsonify({
+            "account": "paper",
+            "cash": settings["paper_starting_cash"],
+            "power": broker.buying_power(),
+            "currency": "USD",
+        })
     try:
-        return jsonify(account.fetch())
+        return jsonify({"account": "live", **account.fetch()})
     except Exception as e:
         return jsonify({"error": f"Real account unavailable: {e}"}), 503
 
