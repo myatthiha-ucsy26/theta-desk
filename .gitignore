@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+
+# Runtime data: rebuilt from OpenD, never source
+data/
+klines_cache/
+iv_history/
+*.db
+*.db-wal
+*.db-shm
+
+# Local credentials (copy .env.example to .env)
+.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# OS
+.DS_Store
