@@ -149,7 +149,7 @@ DEFAULT_SETTINGS = {
     "ai_allow_caution": True,
     "alert_cooldown_hours": 24,
     # Credentials. Empty means "not set here", and the environment (.env) answers instead, so a
-    # headless run is unaffected. app.py lays these over os.environ for every outbound call.
+    # headless run is unaffected. AppContext.credential_env lays these over os.environ.
     "ai_api_key": "",
     "ai_api_endpoint": "",
     "ai_model": "",
