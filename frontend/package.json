@@ -1,5 +1,7 @@
 {
   "name": "theta-desk",
+  "description": "React desk UI for Theta Desk",
+  "license": "MIT",
   "private": true,
   "version": "0.1.0",
   "type": "module",

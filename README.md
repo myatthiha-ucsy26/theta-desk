@@ -531,6 +531,12 @@ paper mode proves nothing about live mode the moment the two drift.
 Everything generated is rebuildable and git-ignored. Delete any of it and it
 comes back; the one thing worth backing up is `data/engine.db`.
 
+## Licence
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, change it; keep the copyright
+notice, and note that it comes with no warranty of any kind. That last part is
+not boilerplate here: see below.
+
 ## Risk
 
 This is a personal tool published as-is. It is **not investment advice**, not a
