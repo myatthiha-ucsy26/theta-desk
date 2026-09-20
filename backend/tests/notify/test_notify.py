@@ -39,6 +39,9 @@ def no_earnings_lookup(monkeypatch):
     monkeypatch.setattr(market_data, "next_earnings", lambda ticker, *a, **k: None)
 
 
+AI_ENV = {"AI_API_KEY": "K", "AI_API_ENDPOINT": "https://example.test/anthropic",
+          "AI_MODEL": "m1"}
+
 SIGNAL = {
     "spot": 650.0, "direction": "SELL_PUT", "expiration": "2026-10-02", "dte": 14,
     "iv_pct": 42.0, "iv_rank": None, "indicators": {"rsi": 31.0, "pctb": 0.08, "adx": 18.0},
@@ -135,7 +138,7 @@ def test_ai_review_hands_the_model_the_real_earnings_date(http, monkeypatch):
     """The entry review is what vetoes a trade, so it must get the calendar's answer."""
     monkeypatch.setattr(market_data, "next_earnings", lambda ticker, *a, **k: "2026-10-01")
     http["reply"] = {"content": [{"type": "text", "text": "VERDICT: CONFIRM\nREASON: ok"}]}
-    notify.ai_review("META", SIGNAL, env={"AI_API_KEY": "K"})
+    notify.ai_review("META", SIGNAL, env=AI_ENV)
     assert "META reports on 2026-10-01" in json.loads(http["requests"][0].data)["messages"][0]["content"]
 
 
@@ -168,7 +171,7 @@ def test_call_ai_sends_key_and_joins_text_blocks(http):
 
 
 def test_call_ai_turns_off_thinking(http):
-    """some-model-v1 (and v4-flash) think by default and spent the whole answer
+    """Some models think by default and can spend the whole answer
     budget on it: 512 tokens of thinking and no text, even at 4096. Thinking must be off."""
     http["reply"] = {"content": [{"type": "text", "text": "VERDICT: CONFIRM\nREASON: ok"}]}
     notify.call_ai("KEY", "https://example.test", "m1", "prompt")
@@ -212,7 +215,7 @@ def test_a_custom_path_under_a_known_host_is_still_recognised(http):
 
 def test_a_provider_listed_for_thinking_gets_it(http):
     http["reply"] = {"content": [{"type": "text", "text": "VERDICT: CONFIRM\nREASON: ok"}]}
-    notify.call_ai("KEY", "https://vendor.test/anthropic", "other-pro", "prompt")
+    notify.call_ai("KEY", "https://vendor.test/anthropic", "thinking-model-v1", "prompt")
     assert json.loads(http["requests"][0].data)["thinking"] == {"type": "disabled"}
 
 
@@ -239,18 +242,36 @@ def test_the_provider_list_can_be_rendered_as_a_dropdown():
     assert len(hosts) == len(set(hosts)), "two providers share a host, so _provider_for is ambiguous"
 
 
-def test_the_built_in_default_is_one_of_the_listed_providers():
-    """A blank endpoint means "the built-in default". If that is not on the list, the dropdown's
-    first option and the engine's actual behaviour describe two different endpoints."""
-    urls = [p["url"] for p in notify.AI_PROVIDERS]
-    assert notify.DEFAULT_AI_ENDPOINT in urls
-    default = next(p for p in notify.AI_PROVIDERS if p["url"] == notify.DEFAULT_AI_ENDPOINT)
-    assert notify.DEFAULT_AI_MODEL in [m["id"] for m in default["models"]]
+def test_no_endpoint_or_model_is_built_in():
+    """The review is a paid call to somebody else's service. Unset must mean off,
+    not a quiet call to an endpoint the operator never chose."""
+    assert not hasattr(notify, "DEFAULT_AI_ENDPOINT")
+    assert not hasattr(notify, "DEFAULT_AI_MODEL")
+    for provider in notify.AI_PROVIDERS:
+        assert "default" not in provider["label"].lower()
+        for model in provider["models"]:
+            assert "default" not in model["label"].lower()
+
+
+def test_an_unconfigured_review_says_exactly_what_is_missing():
+    assert notify.ai_review("META", SIGNAL, env={}) == (
+        "UNAVAILABLE", "AI_API_KEY, AI_API_ENDPOINT, AI_MODEL not set")
+    key_only = {"AI_API_KEY": "K"}
+    assert notify.ai_review("META", SIGNAL, env=key_only) == (
+        "UNAVAILABLE", "AI_API_ENDPOINT, AI_MODEL not set")
+    assert notify.ai_exit_review(TRADE, 745.0, 1.0, env=key_only) == (
+        "UNAVAILABLE", "AI_API_ENDPOINT, AI_MODEL not set")
+
+
+def test_a_blank_setting_counts_as_unset():
+    """A cleared field in the dashboard writes "", which must not reach call_ai."""
+    env = {"AI_API_KEY": "K", "AI_API_ENDPOINT": "   ", "AI_MODEL": "m1"}
+    assert notify.ai_review("META", SIGNAL, env=env)[0] == "UNAVAILABLE"
 
 
 def test_ai_review_with_only_thinking_and_no_text_is_unavailable(http):
     http["reply"] = {"content": [{"type": "thinking", "thinking": "hmm..."}], "stop_reason": "max_tokens"}
-    assert notify.ai_review("META", SIGNAL, env={"AI_API_KEY": "K"})[0] == "UNAVAILABLE"
+    assert notify.ai_review("META", SIGNAL, env=AI_ENV)[0] == "UNAVAILABLE"
 
 
 def test_ai_review_without_key_is_unavailable_and_offline(http):
@@ -260,18 +281,18 @@ def test_ai_review_without_key_is_unavailable_and_offline(http):
 
 def test_ai_review_confirm(http):
     http["reply"] = {"content": [{"type": "text", "text": "VERDICT: CONFIRM\nREASON: quiet week"}]}
-    assert notify.ai_review("META", SIGNAL, env={"AI_API_KEY": "K"}) == ("CONFIRM", "quiet week")
+    assert notify.ai_review("META", SIGNAL, env=AI_ENV) == ("CONFIRM", "quiet week")
 
 
 def test_ai_review_unparseable_reply_is_unavailable_not_caution(http):
     """The engine must not treat a garbled reply as a soft yes."""
     http["reply"] = {"content": [{"type": "text", "text": "Sure! Looks good to me."}]}
-    assert notify.ai_review("META", SIGNAL, env={"AI_API_KEY": "K"})[0] == "UNAVAILABLE"
+    assert notify.ai_review("META", SIGNAL, env=AI_ENV)[0] == "UNAVAILABLE"
 
 
 def test_ai_review_network_error_is_unavailable(http):
     http["raise"] = OSError("connection refused")
-    verdict, reason = notify.ai_review("META", SIGNAL, env={"AI_API_KEY": "K"})
+    verdict, reason = notify.ai_review("META", SIGNAL, env=AI_ENV)
     assert verdict == "UNAVAILABLE" and "connection refused" in reason
 
 
@@ -307,7 +328,7 @@ def test_ai_exit_review_passes_the_earnings_fact(monkeypatch):
 
     monkeypatch.setattr(notify, "call_ai", fake_call)
     monkeypatch.setattr(market_data, "next_earnings", lambda t, *a, **k: "2026-09-28")
-    notify.ai_exit_review(TRADE, 745.0, 1.0, env={"AI_API_KEY": "k"})
+    notify.ai_exit_review(TRADE, 745.0, 1.0, env=AI_ENV)
     assert "SPY reports on 2026-09-28" in seen["prompt"]
 
 
@@ -320,6 +341,6 @@ def test_parse_exit_verdict():
 def test_ai_exit_review_unavailable_without_key_or_on_bad_reply(monkeypatch):
     assert notify.ai_exit_review(TRADE, 745.0, 1.0, env={})[0] == "UNAVAILABLE"
     monkeypatch.setattr(notify, "call_ai", lambda *a, **k: "hmm")
-    assert notify.ai_exit_review(TRADE, 745.0, 1.0, env={"AI_API_KEY": "k"})[0] == "UNAVAILABLE"
+    assert notify.ai_exit_review(TRADE, 745.0, 1.0, env=AI_ENV)[0] == "UNAVAILABLE"
     monkeypatch.setattr(notify, "call_ai", lambda *a, **k: "VERDICT: EXIT\nREASON: news")
-    assert notify.ai_exit_review(TRADE, 745.0, 1.0, env={"AI_API_KEY": "k"}) == ("EXIT", "news")
+    assert notify.ai_exit_review(TRADE, 745.0, 1.0, env=AI_ENV) == ("EXIT", "news")

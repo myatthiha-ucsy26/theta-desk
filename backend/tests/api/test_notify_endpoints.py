@@ -32,7 +32,7 @@ def test_ai_confirm_endpoint_keeps_its_response_shape(client, monkeypatch):
     seen = []
     _fake(monkeypatch, {"content": [{"type": "text", "text": "VERDICT: AVOID\nREASON: earnings"}]}, seen)
     resp = client.post("/api/ai/confirm", json={
-        "api_key": "K", "api_endpoint": "https://example.test", "ticker": "META",
+        "api_key": "K", "api_endpoint": "https://example.test", "model": "m1", "ticker": "META",
         "signal": {"direction": "SELL_PUT", "spot": 650.0},
     })
     assert resp.status_code == 200
@@ -45,7 +45,7 @@ def test_ai_confirm_endpoint_unparseable_reply_stays_caution_for_the_dashboard(c
     seen = []
     _fake(monkeypatch, {"content": [{"type": "text", "text": "Looks fine."}]}, seen)
     resp = client.post("/api/ai/confirm", json={
-        "api_key": "K", "api_endpoint": "https://example.test", "ticker": "META",
+        "api_key": "K", "api_endpoint": "https://example.test", "model": "m1", "ticker": "META",
         "signal": {"direction": "SELL_PUT"},
     })
     assert resp.get_json()["verdict"] == "CAUTION"
@@ -56,7 +56,7 @@ def test_ai_confirm_empty_answer_is_an_error_not_a_blank_caution(client, monkeyp
     seen = []
     _fake(monkeypatch, {"content": [{"type": "thinking", "thinking": "..."}]}, seen)
     resp = client.post("/api/ai/confirm", json={
-        "api_key": "K", "api_endpoint": "https://example.test", "ticker": "META",
+        "api_key": "K", "api_endpoint": "https://example.test", "model": "m1", "ticker": "META",
         "signal": {"direction": "SELL_PUT"},
     })
     assert resp.status_code == 502
@@ -80,3 +80,14 @@ def test_telegram_endpoint_api_error_is_400(client, monkeypatch):
                                       json={"bot_token": "T", "chat_id": "1", "message": "hi"})
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "bot was blocked"
+
+
+def test_ai_confirm_requires_a_model_now_that_none_is_built_in(client):
+    """There is no default model to fall back on, so a request without one is a
+    bad request rather than a call to something nobody chose."""
+    resp = client.post("/api/ai/confirm", json={
+        "api_key": "K", "api_endpoint": "https://example.test", "ticker": "META",
+        "signal": {"direction": "SELL_PUT"},
+    })
+    assert resp.status_code == 400
+    assert "model" in resp.get_json()["error"]

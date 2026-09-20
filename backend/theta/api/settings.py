@@ -112,11 +112,11 @@ def api_ai_confirm():
         return jsonify({"error": "JSON body required"}), 400
     api_key = _secret(body.get("api_key"), "AI_API_KEY")
     api_endpoint = _secret(body.get("api_endpoint"), "AI_API_ENDPOINT").rstrip("/")
-    model = _secret(body.get("model"), "AI_MODEL") or notify.DEFAULT_AI_MODEL
+    model = _secret(body.get("model"), "AI_MODEL")
     ticker = (body.get("ticker") or "").strip()
     signal = body.get("signal") or {}
-    if not api_key or not api_endpoint or not ticker or not signal:
-        return jsonify({"error": "api_key, api_endpoint, ticker, and signal required"}), 400
+    if not api_key or not api_endpoint or not model or not ticker or not signal:
+        return jsonify({"error": "api_key, api_endpoint, model, ticker, and signal required"}), 400
 
     try:
         content = notify.call_ai(api_key, api_endpoint, model,

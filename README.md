@@ -138,7 +138,7 @@ flowchart TD
 | `tradeable` | Does a spread actually fit — open-interest floor, $500 max risk per trade? |
 | `edge` | Does the pooled 5-year backtest show positive expectancy for this IV-rank bucket, over at least 100 trades? |
 | `risk` | Position count, total deployed risk, one position per ticker. |
-| `ai` | Optional event-risk review (earnings, news) against an AI endpoint. |
+| `ai` | Optional event-risk review (earnings, news) against an AI endpoint of your choosing. |
 | `dedupe` | Have we already alerted this same spread inside the cooldown? |
 
 `edge`, `risk`, `ai` and `dedupe` can each be switched off — except in auto
@@ -426,10 +426,18 @@ they read out as a fixed-width mask, and posting that mask back means
 | Variable | For |
 |---|---|
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Alerts |
-| `AI_API_KEY`, `AI_API_ENDPOINT`, `AI_MODEL` | AI trade review — any Anthropic-compatible endpoint |
+| `AI_API_KEY`, `AI_API_ENDPOINT`, `AI_MODEL` | AI trade review. All three, or the review stays off |
 | `OPEND_HOST`, `OPEND_PORT` | OpenD gateway |
 | `PORT`, `MCP_PORT` | Server ports |
 | `CS_DB_PATH` | Database file (default `data/engine.db`) |
+
+No AI endpoint or model is built in. The review is a paid call to somebody
+else's service, so which one it is stays an explicit choice: until all three
+values are set the review simply does not run, and with `ai_enabled` on it
+reports itself as unavailable rather than calling somewhere you never picked.
+The Settings screen lists some providers that speak the Anthropic API, along
+with the auth header each expects — none is preselected, and the endpoint field
+takes any compatible URL, listed or not.
 
 Everything else — watchlist, DTEs, interval, gate switches, risk caps, exit
 rules — lives in the Settings screen and is validated server-side before it is

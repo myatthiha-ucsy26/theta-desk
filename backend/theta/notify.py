@@ -10,8 +10,13 @@ import urllib.request
 
 from theta.market import data as market_data
 
-DEFAULT_AI_ENDPOINT = ""
-DEFAULT_AI_MODEL = ""
+# No endpoint or model is built in. The review is a paid call to somebody else's
+# service, so which one it is stays an explicit choice: unset means the review is
+# off, not that it quietly goes somewhere chosen for you.
+#
+# AI_PROVIDERS below is a convenience list for the settings screen -- the auth
+# header each one wants, and the models it serves. None of them is privileged,
+# and the endpoint field takes any Anthropic-compatible URL, listed or not.
 
 # The endpoints the dashboard offers, each with the models it serves. Served to the browser rather
 # than copied into it: the auth header call_ai picks and the list the screen shows are the same
@@ -19,9 +24,13 @@ DEFAULT_AI_MODEL = ""
 #
 # `auth` is the header the key rides in. Anthropic's own protocol reads x-api-key, but Moonshot and
 # OpenRouter read only a bearer token -- a client that hard-codes one of those cannot talk to the
-# other. `disable_thinking` turns extended thinking off, which Other Provider v4 needs: it otherwise
-# spends the whole token budget thinking and returns no text at all. Providers whose models think
+# other. `disable_thinking` turns extended thinking off, which some models need: they otherwise
+# spend the whole token budget thinking and return no text at all. Providers whose models think
 # only when asked are left alone rather than sent the field they would reject.
+# Nothing here is recommended, preselected, or the default. Anthropic is listed
+# first because the endpoint contract is its API -- every other entry is a service
+# that speaks it -- and the rest follow in name order. The endpoint field accepts
+# any Anthropic-compatible URL, listed here or not.
 AI_PROVIDERS = [
     {
         "id": "anthropic",
@@ -34,18 +43,6 @@ AI_PROVIDERS = [
             {"id": "claude-opus-5", "label": "Claude Opus 5 — strongest"},
             {"id": "claude-sonnet-5", "label": "Claude Sonnet 5 — balanced"},
             {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5 — fastest"},
-        ],
-    },
-    {
-        "id": "zhipu",
-        "label": "Z.ai / Zhipu GLM",
-        "url": "https://open.bigmodel.cn/api/anthropic",
-        "auth": "key",
-        "disable_thinking": False,
-        "models": [
-            {"id": "glm-5.3", "label": "GLM 5.3 — flagship"},
-            {"id": "glm-5.3-flash", "label": "GLM 5.3 Flash — fast"},
-            {"id": "glm-4.7", "label": "GLM 4.7 — mid-tier"},
         ],
     },
     {
@@ -69,6 +66,18 @@ AI_PROVIDERS = [
             {"id": "anthropic/claude-sonnet-5", "label": "Claude Sonnet 5"},
             {"id": "anthropic/claude-opus-5", "label": "Claude Opus 5"},
             {"id": "moonshot/kimi-k3", "label": "Kimi K3"},
+        ],
+    },
+    {
+        "id": "zhipu",
+        "label": "Z.ai / Zhipu GLM",
+        "url": "https://open.bigmodel.cn/api/anthropic",
+        "auth": "key",
+        "disable_thinking": False,
+        "models": [
+            {"id": "glm-5.3", "label": "GLM 5.3 — flagship"},
+            {"id": "glm-5.3-flash", "label": "GLM 5.3 Flash — fast"},
+            {"id": "glm-4.7", "label": "GLM 4.7 — mid-tier"},
         ],
     },
 ]
@@ -213,7 +222,7 @@ def call_ai(api_key, api_endpoint, model, prompt, timeout=20):
         "max_tokens": 512,
         "messages": [{"role": "user", "content": prompt}],
     }
-    # Other Provider v4 models think by default and spent the whole budget on it, returning no text at
+    # Some models think by default and spend the whole budget on it, returning no text at
     # all (even with 4096 tokens). A two-line verdict needs no thinking. An endpoint we do not
     # recognise keeps the field, which is how every custom endpoint has been called all along.
     if provider is None or provider["disable_thinking"]:
@@ -233,6 +242,20 @@ def call_ai(api_key, api_endpoint, model, prompt, timeout=20):
     return "".join(b.get("text", "") for b in result.get("content", []) if b.get("type") == "text")
 
 
+def ai_config(env):
+    """(key, endpoint, model) for a review, or (None, reason) when it is not set up.
+
+    All three are required and none is defaulted, so an unconfigured desk says
+    which piece is missing instead of calling somewhere it was never told about.
+    """
+    missing = [name for name in ("AI_API_KEY", "AI_API_ENDPOINT", "AI_MODEL")
+               if not (env.get(name) or "").strip()]
+    if missing:
+        return None, f"{', '.join(missing)} not set"
+    return (env["AI_API_KEY"].strip(), env["AI_API_ENDPOINT"].strip().rstrip("/"),
+            env["AI_MODEL"].strip()), None
+
+
 def ai_review(ticker, signal, env=None):
     """Engine-side review. (verdict, reason); verdict is CONFIRM | CAUTION | AVOID | UNAVAILABLE.
 
@@ -240,16 +263,13 @@ def ai_review(ticker, signal, env=None):
     reply without a VERDICT line -- is UNAVAILABLE, which the engine treats as a no.
     """
     env = os.environ if env is None else env
-    key = env.get("AI_API_KEY", "")
-    if not key:
-        return "UNAVAILABLE", "AI_API_KEY not set"
+    config, problem = ai_config(env)
+    if problem:
+        return "UNAVAILABLE", problem
+    key, endpoint, model = config
     try:
-        content = call_ai(
-            key,
-            env.get("AI_API_ENDPOINT") or DEFAULT_AI_ENDPOINT,
-            env.get("AI_MODEL") or DEFAULT_AI_MODEL,
-            build_ai_prompt(ticker, signal, earnings_fact(ticker)),
-        )
+        content = call_ai(key, endpoint, model,
+                          build_ai_prompt(ticker, signal, earnings_fact(ticker)))
     except Exception as e:
         return "UNAVAILABLE", f"AI call failed: {e}"
     verdict, reason = parse_ai_verdict(content)
@@ -293,12 +313,12 @@ def parse_exit_verdict(content):
 def ai_exit_review(trade, spot, mid_debit, env=None):
     """(verdict, reason); verdict is EXIT | HOLD | UNAVAILABLE. Only a parsed EXIT closes a trade."""
     env = os.environ if env is None else env
-    key = env.get("AI_API_KEY", "")
-    if not key:
-        return "UNAVAILABLE", "AI_API_KEY not set"
+    config, problem = ai_config(env)
+    if problem:
+        return "UNAVAILABLE", problem
+    key, endpoint, model = config
     try:
-        content = call_ai(key, env.get("AI_API_ENDPOINT") or DEFAULT_AI_ENDPOINT,
-                          env.get("AI_MODEL") or DEFAULT_AI_MODEL,
+        content = call_ai(key, endpoint, model,
                           build_exit_prompt(trade, spot, mid_debit, earnings_fact(trade["ticker"])))
     except Exception as e:
         return "UNAVAILABLE", f"AI call failed: {e}"

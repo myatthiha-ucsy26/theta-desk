@@ -39,7 +39,7 @@ const PRESET_DTES = [7, 14];
 const DTE_MIN = 1;
 const DTE_MAX = 365;
 
-// The endpoint dropdown's third kind of choice. "Built-in default" and each provider are values;
+// The endpoint dropdown's third kind of choice. "Not set" and each provider are values;
 // Custom is a mode -- the endpoint is whatever gets typed -- so it needs a sentinel to select it.
 const CUSTOM = "__custom__";
 
@@ -416,8 +416,9 @@ export function Settings() {
         : "With no key the AI answers UNAVAILABLE, and the engine reads that as a no.";
 
   const provider = providers.find((p) => p.url === draft?.ai_api_endpoint);
-  // What the endpoint dropdown shows. A blank endpoint is "Built-in default" rather than a
-  // provider: it means the environment and cs_notify's own defaults decide, as they always have.
+  // What the endpoint dropdown shows. A blank endpoint is "Not set" rather than a provider:
+  // nothing is built in, so until one is chosen here or named in the environment, the review
+  // simply does not run.
   const endpointChoice = customEndpoint ? CUSTOM : (provider?.url ?? "");
 
   function update<K extends keyof SettingsData>(key: K, value: SettingsData[K]) {
@@ -441,7 +442,7 @@ export function Settings() {
     setCustomEndpoint(false);
     const next = providers.find((p) => p.url === url);
     update("ai_api_endpoint", next?.url ?? "");
-    // The built-in endpoint has no list of its own; it resolves through the environment.
+    // "Not set" has no model list of its own, so clear the model with it.
     const keep = next?.models.some((m) => m.id === draft?.ai_model);
     update("ai_model", next ? (keep ? (draft?.ai_model ?? "") : (next.models[0]?.id ?? "")) : "");
   }
@@ -881,11 +882,11 @@ export function Settings() {
               value={endpointChoice}
               onChange={chooseEndpoint}
               options={[
-                { value: "", label: "Built-in default" },
+                { value: "", label: "Not set — AI review off" },
                 ...providers.map((p) => ({ value: p.url, label: p.label })),
                 { value: CUSTOM, label: "Custom…" },
               ]}
-              hint="Blank reviews through the built-in endpoint, unless the environment names another."
+              hint="Any Anthropic-compatible endpoint. Blank leaves the review off unless the environment names one."
             />
 
             {customEndpoint ? (
@@ -905,7 +906,7 @@ export function Settings() {
                 label="Model"
                 value={draft.ai_model}
                 onChange={(v) => update("ai_model", v)}
-                placeholder="Built-in default"
+                placeholder="Model name"
                 hint="The model name that endpoint expects."
               />
             ) : (
@@ -916,13 +917,13 @@ export function Settings() {
                 onChange={(v) => update("ai_model", v)}
                 disabled={!provider}
                 options={[
-                  { value: "", label: "Built-in default" },
+                  { value: "", label: "Not set — AI review off" },
                   ...(provider?.models ?? []).map((m) => ({ value: m.id, label: m.label })),
                 ]}
                 hint={
                   provider
                     ? `The models ${provider.label} serves.`
-                    : "The built-in endpoint serves the built-in model, unless the environment names another."
+                    : "Choose an endpoint first, or name a model in the environment."
                 }
               />
             )}

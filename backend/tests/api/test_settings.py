@@ -159,7 +159,8 @@ def test_the_provider_list_is_served_to_the_dashboard(client):
     only notify knows, and a second copy in TypeScript would drift from it."""
     body = client.get("/api/ai/providers").get_json()
     assert body == notify.AI_PROVIDERS
-    assert any(p["url"] == notify.DEFAULT_AI_ENDPOINT for p in body)
+    # None of them is preselected or recommended; the screen starts on "Not set".
+    assert all("default" not in p["label"].lower() for p in body)
 
 
 def test_a_saved_model_reaches_the_dashboard_review(client, monkeypatch):
