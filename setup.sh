@@ -61,10 +61,12 @@ say "Installing frontend dependencies"
 if [ ! -f .env ]; then
   say "Creating .env from .env.example"
   cp .env.example .env
+  chmod 600 .env          # it will hold credentials
   echo "    Fill in Telegram and AI credentials when you want alerts and trade review."
 else
   echo
-  echo "    .env already exists; leaving it alone."
+  echo "    .env already exists; leaving its contents alone."
+  chmod 600 .env          # but never leave credentials world-readable
 fi
 
 # ----------------------------------------------------------------------- check

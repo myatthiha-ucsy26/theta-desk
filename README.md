@@ -14,7 +14,7 @@ live account and the same code places real orders through moomoo OpenD.
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-stdlib-003B57?logo=sqlite&logoColor=white">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-958-success">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-987-success">
 </p>
 
 Everything runs on your own machine. There is no hosted component, no account
@@ -43,6 +43,7 @@ one).
 - [Market data over MCP](#market-data-over-mcp)
 - [Project layout](#project-layout)
 - [Testing](#testing)
+- [Security and your data](#security-and-your-data)
 - [Data and files](#data-and-files)
 - [Risk](#risk)
 
@@ -90,7 +91,7 @@ events so you watch them work rather than waiting on a spinner.
 | pandas | 3.0 | Kline frames come out of OpenD as DataFrames |
 | futu-api | 10.10 | The moomoo OpenD client, for both quotes and orders |
 | SQLite | stdlib | One file, transactional, zero daemons. No ORM — the schema is small and the queries are hand-written |
-| pytest | 9.1 | 541 tests, none of which touch the network |
+| pytest | 9.1 | 570 tests, none of which touch the network |
 | mcp | 2.2 | Optional: exposes the market-data tools over MCP |
 
 **Frontend**
@@ -308,7 +309,7 @@ headless and the tests never need a request context.
 
 **Every side effect is injected.** The scan pipeline and the monitor take their
 IO as a dict of callables, so the entire decision path runs offline against
-fakes. That is why 541 backend tests finish in under four seconds and none of
+fakes. That is why 570 backend tests finish in under four seconds and none of
 them can accidentally reach OpenD or fire a real order.
 
 **Process state is passed in, not reached for.** The database path, broker
@@ -514,7 +515,7 @@ theta-desk/
 ## Testing
 
 ```bash
-cd backend  && .venv/bin/python -m pytest      # 541 tests
+cd backend  && .venv/bin/python -m pytest      # 570 tests
 cd frontend && npm test                        # 417 tests, 39 files
 ```
 
@@ -538,6 +539,59 @@ paper mode proves nothing about live mode the moment the two drift.
 
 Everything generated is rebuildable and git-ignored. Delete any of it and it
 comes back; the one thing worth backing up is `data/engine.db`.
+
+## Security and your data
+
+### It answers only to this machine
+
+The server binds to `127.0.0.1`, which keeps other machines out. That alone is
+not enough: a web page you visit can point its own domain at `127.0.0.1` (DNS
+rebinding), at which point the browser treats it as same-origin with the desk
+and can read your book and post to every endpoint — there is no login to get
+past, because a single-user local tool has none.
+
+So every request's `Host` header is checked, and anything that did not address
+the desk as `localhost` is refused with a 403 before it reaches a handler. The
+MCP server has the same protection. Set `THETA_ALLOWED_HOSTS` (comma-separated)
+if you front the desk with a hostname of your own; it is additive, so loopback
+never stops working.
+
+Request bodies are parsed only when they are declared as JSON, so a cross-origin
+form post cannot reach a handler by dressing itself up as `text/plain`.
+
+### Secrets
+
+`.env` and `data/engine.db` are both created `0600`, and `data/` `0700` — the
+database stores your AI key and Telegram token in clear text, and a mode on the
+file alone still lets anyone list what sits beside it. A database restored from
+a backup is locked down again on the next connection.
+
+A saved secret is never sent back to the browser: it reads out as a fixed-width
+mask, and posting that mask back means "unchanged". No key appears in any error
+response, log line or journal entry.
+
+### What leaves your machine
+
+Nothing is sent anywhere unless you configure it. There is no telemetry, no
+analytics and no crash reporting — the only outbound calls in the codebase are
+the two below, plus your local OpenD gateway.
+
+| Destination | What it receives |
+|---|---|
+| **Your AI provider** | Ticker, spot, IV and rank, indicators, the mode verdicts and the proposed spread. Exit reviews also send the open position and what it costs to close. |
+| **Telegram** | The alert text: ticker, strikes, credit. |
+| **OpenD** | Your orders and quote requests — a gateway on your own machine. |
+
+The AI review therefore sends your strategy and your open positions to a third
+party. That is inherent to the feature rather than a bug, but it is the one
+place your data goes: no endpoint is configured by default, and `ai_enabled:
+false` turns it off entirely.
+
+### What this does not protect against
+
+Anything already running as your user. A local process can read `data/engine.db`
+the same way the desk does, and the desk trusts every request that reaches it
+from localhost. The threat model is a hostile web page, not a hostile machine.
 
 ## Licence
 

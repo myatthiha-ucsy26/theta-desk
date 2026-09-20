@@ -193,6 +193,29 @@ DEFAULT_SETTINGS = {
 ACCOUNT_MODES = ("paper", "live")
 
 
+# The database holds the AI key and the Telegram token in clear text, so it is
+# kept readable only by the user who owns it. The directory too: a mode on the
+# file alone still lets anyone list what is beside it.
+FILE_MODE = 0o600
+DIR_MODE = 0o700
+
+
+def _restrict(path):
+    """Take away group and other access, on the database and its directory.
+
+    Applied on every connect rather than at creation: a database restored from a
+    backup, copied from another machine or created before this existed would
+    otherwise keep whatever mode it arrived with.
+    """
+    directory = os.path.dirname(path)
+    for target, mode in ((directory, DIR_MODE), (path, FILE_MODE)):
+        try:
+            if os.path.exists(target) and (os.stat(target).st_mode & 0o777) != mode:
+                os.chmod(target, mode)
+        except OSError:
+            pass  # a read-only mount or a foreign owner is not worth failing a scan over
+
+
 def connect(path=None):
     """Open a connection. WAL mode lets the engine thread write while requests read."""
     path = path or DEFAULT_PATH
@@ -200,6 +223,7 @@ def connect(path=None):
     conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    _restrict(path)
     return conn
 
 

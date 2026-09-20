@@ -99,7 +99,11 @@ def api_account():
 
 @bp.route("/api/paper/open", methods=["POST"])
 def api_paper_open():
-    body = request.get_json(force=True)
+    # silent, not force: force=True parses whatever the Content-Type says, which is
+    # what lets a cross-origin form post here without a preflight.
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "JSON object required"}), 400
     required = ["ticker", "direction", "short_strike", "long_strike", "width", "credit", "expiry"]
     for k in required:
         if k not in body:
@@ -134,7 +138,9 @@ def api_paper_open():
 
 @bp.route("/api/paper/close", methods=["POST"])
 def api_paper_close():
-    body = request.get_json(force=True)
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "JSON object required"}), 400
     trade_id = body.get("id")
     if not trade_id:
         return jsonify({"error": "id required"}), 400
