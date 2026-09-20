@@ -45,7 +45,9 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 
 say "Installing backend dependencies (app, tests, MCP server)"
-"$VENV/bin/python" -m pip install -q --upgrade pip
+# setuptools too: the one bundled with a fresh venv has a known advisory
+# (PYSEC-2026-3447), and every clone would otherwise start out with it.
+"$VENV/bin/python" -m pip install -q --upgrade pip 'setuptools>=83'
 "$VENV/bin/python" -m pip install -q -e "backend[dev,mcp]"
 
 # -------------------------------------------------------------------- frontend
