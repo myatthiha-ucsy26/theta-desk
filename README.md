@@ -361,7 +361,7 @@ and the two don't throttle each other.
 ### Install
 
 ```bash
-git clone https://github.com/<your-username>/theta-desk.git
+git clone https://github.com/myatthiha-ucsy26/theta-desk.git
 cd theta-desk
 ./setup.sh
 ```
