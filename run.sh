@@ -6,6 +6,8 @@
 #   ./run.sh --skip-tests    skip the test gate
 #   ./run.sh --no-mcp        do not start the MCP server
 #   ./run.sh --no-open       do not open a browser
+#   ./run.sh --backend       the API (and MCP) only: backend tests, no UI build, no browser
+#   ./run.sh --frontend      Vite only, on 5173, against a backend already running on PORT
 #
 # Ports:  PORT=5057 the desk · MCP_PORT=5058 the MCP server · 5173 Vite (--dev)
 # OpenD:  OPEND_HOST / OPEND_PORT, default 127.0.0.1:11111
@@ -22,13 +24,15 @@ OPEND_PORT="${OPEND_PORT:-11111}"
 URL="http://127.0.0.1:${PORT}"
 PY="backend/.venv/bin/python"
 
-DEV=0; SKIP_TESTS=0; WITH_MCP=1; OPEN=1
+DEV=0; SKIP_TESTS=0; WITH_MCP=1; OPEN=1; ONLY=""
 for arg in "$@"; do
   case "$arg" in
     --dev)        DEV=1 ;;
     --skip-tests) SKIP_TESTS=1 ;;
     --no-mcp)     WITH_MCP=0 ;;
     --no-open)    OPEN=0 ;;
+    --backend)    ONLY=backend ;;
+    --frontend)   ONLY=frontend ;;
     -h|--help)    awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; exit 0 ;;
     *)            echo "Unknown option: $arg  (try --help)" >&2; exit 2 ;;
   esac
@@ -37,6 +41,10 @@ done
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 warn() { printf '\033[33m!!  %s\033[0m\n' "$1"; }
 die()  { printf '\033[31m!!  %s\033[0m\n' "$1" >&2; exit 1; }
+
+# --backend: no UI build and nothing to open. --frontend: Vite alone, no MCP.
+if [ "$ONLY" = backend ];  then OPEN=0; fi
+if [ "$ONLY" = frontend ]; then DEV=1; WITH_MCP=0; fi
 
 port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
@@ -67,11 +75,13 @@ check_port() {
   port_busy "$1" && die "Port $1 is already in use, and $2 needs it. Stop what is on it, or set $3."
   return 0
 }
-check_port "$PORT" "the desk" "PORT"
+if [ "$ONLY" != frontend ]; then check_port "$PORT" "the desk" "PORT"; fi
 if [ "$WITH_MCP" -eq 1 ]; then check_port "$MCP_PORT" "the MCP server" "MCP_PORT"; fi
 if [ "$DEV" -eq 1 ];     then check_port "$VITE_PORT" "Vite" "VITE_PORT"; fi
 
-if (exec 3<>"/dev/tcp/${OPEND_HOST}/${OPEND_PORT}") 2>/dev/null; then
+if [ "$ONLY" = frontend ]; then
+  port_busy "$PORT" || warn "No backend on port ${PORT} — /api calls will fail until one runs (./run.sh --backend)."
+elif (exec 3<>"/dev/tcp/${OPEND_HOST}/${OPEND_PORT}") 2>/dev/null; then
   echo "==> OpenD reachable at ${OPEND_HOST}:${OPEND_PORT}"
 else
   warn "OpenD not reachable at ${OPEND_HOST}:${OPEND_PORT} — the UI and paper book work, live data will error."
@@ -79,14 +89,18 @@ fi
 
 # ------------------------------------------------------------------- test gate
 if [ "$SKIP_TESTS" -eq 0 ]; then
-  say "Backend tests"
-  (cd backend && .venv/bin/python -m pytest -q)
-  say "Frontend tests"
-  (cd frontend && npm test --silent)
+  if [ "$ONLY" != frontend ]; then
+    say "Backend tests"
+    (cd backend && .venv/bin/python -m pytest -q)
+  fi
+  if [ "$ONLY" != backend ]; then
+    say "Frontend tests"
+    (cd frontend && npm test --silent)
+  fi
 fi
 
 # -------------------------------------------------------------------- build UI
-if [ "$DEV" -eq 0 ]; then
+if [ "$DEV" -eq 0 ] && [ "$ONLY" != backend ]; then
   if [ ! -f frontend/dist/index.html ] || \
      [ -n "$(find frontend/src frontend/index.html frontend/package.json frontend/vite.config.ts \
              -newer frontend/dist/index.html -print -quit 2>/dev/null)" ]; then
@@ -125,10 +139,16 @@ if [ "$OPEN" -eq 1 ]; then
 fi
 
 # ---------------------------------------------------------------------- serve
-say "Theta Desk on ${URL}   (Ctrl-C stops everything)"
-(cd backend && exec env PORT="$PORT" .venv/bin/python -m theta) &
-DESK=$!
-PIDS+=($DESK)
+if [ "$ONLY" = frontend ]; then
+  # Vite is the one process this run exists for; stop when it does.
+  say "Frontend only on ${URL}   (Ctrl-C stops it)"
+  DESK=${PIDS[0]}
+else
+  say "Theta Desk on ${URL}   (Ctrl-C stops everything)"
+  (cd backend && exec env PORT="$PORT" .venv/bin/python -m theta) &
+  DESK=$!
+  PIDS+=($DESK)
+fi
 
 # Waiting (rather than exec-ing) keeps this shell alive to run the trap. If the
 # desk stops on its own, fall through and take the rest down with it.

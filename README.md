@@ -17,6 +17,8 @@ live account and the same code places real orders through moomoo OpenD.
   <img alt="Tests" src="https://img.shields.io/badge/tests-1064-success">
 </p>
 
+▶ [Watch the demo](docs/theta-desk-demo.mp4)
+
 Everything runs on your own machine. There is no hosted component, no account
 system and no telemetry. The only things it talks to are your local OpenD
 gateway, Telegram (if you configure it) and an AI endpoint (if you configure
@@ -403,6 +405,8 @@ First run takes a minute: it runs both test suites, builds the UI, then opens
 ./run.sh --skip-tests    skip the test gate
 ./run.sh --no-mcp        desk only
 ./run.sh --no-open       do not open a browser
+./run.sh --backend       API (5057) + MCP only: backend tests, no UI build
+./run.sh --frontend      Vite (5173) only, against a backend already on 5057
 ./run.sh --help
 ```
 
@@ -418,6 +422,18 @@ with a clear message if one is taken.
 
 **For development**, use `./run.sh --dev`: the API on 5057 and Vite on 5173
 with hot reload, proxying `/api` across. Open 5173, not 5057.
+
+**To run each half on its own**, use two terminals. Then you can restart the API
+without losing the Vite session, or the other way round:
+
+```bash
+./run.sh --backend       # terminal 1: API on 5057 (+ MCP on 5058)
+./run.sh --frontend      # terminal 2: Vite on 5173, proxying /api to 5057
+```
+
+Each runs only its own tests; add `--skip-tests` to start straight away.
+`--frontend` warns if nothing is listening on `PORT` yet. Start the backend
+first, or the UI loads but every `/api` call fails.
 
 ## Configuration
 

@@ -938,6 +938,8 @@ body {
 }
 [data-template="holo"] .panel-title { font-size: 16px; letter-spacing: 0; }
 [data-template="holo"] .panel-body { padding: 1.125rem; }
+/* The Settings save bar: inset its note and buttons to line up with the panel content above. */
+[data-template="holo"] .save-bar { padding: 0.875rem 1.125rem; }
 [data-template="holo"] .stat-tile,
 [data-template="holo"] .stat-card,
 [data-template="holo"] .pos-card,
@@ -1093,6 +1095,7 @@ body {
 /* A light fill (a pressed toggle, the primary button) takes its text in "sheet", which here is
    translucent glass and would wash out; give it solid navy instead. */
 [data-template="holo"] .bg-ink.text-sheet { color: #0b1020; box-shadow: 0 0 16px -4px rgb(230 236 255 / 0.5); }
+[data-template="holo"] .bg-profit.text-sheet { color: #0b1020; }
 /* The nav scrolls sideways on a phone; the swipe is enough, the bar is noise. */
 .holo-nav ul { scrollbar-width: none; }
 .holo-nav ul::-webkit-scrollbar { display: none; }

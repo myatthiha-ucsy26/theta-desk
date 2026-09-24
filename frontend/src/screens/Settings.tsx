@@ -1077,7 +1077,7 @@ export function Settings() {
         </Panel>
       </Section>
 
-      <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 border-t-2 border-ink bg-paper py-3">
+      <div className="save-bar sticky bottom-0 flex flex-wrap items-center justify-end gap-3 border-t-2 border-ink bg-paper py-3">
         {saveError ? (
           <p className="mr-auto text-sm text-critical">{saveError}</p>
         ) : (

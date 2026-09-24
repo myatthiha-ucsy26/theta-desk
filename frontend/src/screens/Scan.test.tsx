@@ -341,7 +341,7 @@ describe("Scan in the Minimal template", () => {
       "section",
     )!;
     // Alerts sort above rejections, so QQQ is open before anything is clicked.
-    expect(within(rail).getByRole("heading", { name: "QQQ" })).toBeDefined();
+    expect(await within(rail).findByRole("heading", { name: "QQQ" })).toBeDefined();
     expect(within(rail).getByText("$1.12")).toBeDefined();
 
     // GOOGL never got a spread, so the rail says so rather than showing a made-up credit.

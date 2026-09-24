@@ -90,7 +90,7 @@ describe("StatusBar", () => {
     saveSettings.mockResolvedValue({ ...online, engine_enabled: false });
     render(<StatusBar />);
 
-    const sw = await screen.findByRole("switch", { name: "Engine" });
+    const sw = await screen.findByRole("switch", { name: "Engine", checked: true });
     await act(async () => {
       fireEvent.click(sw);
     });
@@ -111,7 +111,7 @@ describe("StatusBar", () => {
     saveSettings.mockRejectedValue(new Error("dtes must be a non-empty subset of [7, 14]"));
     render(<StatusBar />);
 
-    const sw = await screen.findByRole("switch", { name: "Engine" });
+    const sw = await screen.findByRole("switch", { name: "Engine", checked: true });
     await act(async () => {
       fireEvent.click(sw);
     });
