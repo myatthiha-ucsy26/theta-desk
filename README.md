@@ -17,7 +17,7 @@ live account and the same code places real orders through moomoo OpenD.
   <img alt="Tests" src="https://img.shields.io/badge/tests-1064-success">
 </p>
 
-▶ [Watch the demo](docs/theta-desk-demo.mp4)
+https://github.com/user-attachments/assets/94c5557c-ba83-4570-a1c3-84c83ce4f188
 
 Everything runs on your own machine. There is no hosted component, no account
 system and no telemetry. The only things it talks to are your local OpenD
