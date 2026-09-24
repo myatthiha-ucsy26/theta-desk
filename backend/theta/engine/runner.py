@@ -9,6 +9,7 @@ import threading
 import time
 
 from theta.storage import db
+from theta.engine import autotrade
 from theta.engine import edge
 from theta.engine import scan
 from theta.research.backtest import run_backtest
@@ -72,12 +73,31 @@ def edge_universe(watchlist):
     return sorted(set(EDGE_UNIVERSE) | {t.upper() for t in watchlist})
 
 
-def build_edge_table(tickers, load_history, dtes=(7, 14), slippage=0.10):
+def exit_rules(settings):
+    """How the bot manages a spread, as the backtest must replay it.
+
+    Held to expiry, ivrich earned about $41 a trade over five years; under the bot's own
+    50% take profit and 3x-credit stop it earned $15-24. A gate judging the first number
+    would be approving a trade the bot never makes.
+    """
+    return {"tp_pct": settings["tp_pct"], "sl_multiple": settings["sl_multiple"],
+            "width": autotrade.WIDTH}
+
+
+def edge_matches(table, rules):
+    """True when every cell was measured under these exit rules."""
+    return all(cell.get("rules") == rules for cell in table.values())
+
+
+def build_edge_table(tickers, load_history, dtes=(7, 14), slippage=0.10, rules=None):
     """Pooled backtest over the watchlist, bucketed by (mode, dte, IV rank).
 
     load_history(ticker) returns a daily kline DataFrame. Tickers whose history
-    cannot be loaded are skipped rather than failing the whole build.
+    cannot be loaded are skipped rather than failing the whole build. With `rules`
+    (see exit_rules) each trade is managed the way the bot manages it, and every cell
+    records the rules it was measured under.
     """
+    rules = rules or {}
     trades = []
     for tk in tickers:
         try:
@@ -86,8 +106,20 @@ def build_edge_table(tickers, load_history, dtes=(7, 14), slippage=0.10):
             continue
         for mode in db.SIGNAL_MODES:
             for dte in dtes:
-                trades += run_backtest(tk, df, [mode], dte, slippage=slippage)
-    return edge.build_edge_table(trades)
+                trades += run_backtest(tk, df, [mode], dte, slippage=slippage, **rules)
+    return {k: {**cell, "rules": rules} for k, cell in edge.build_edge_table(trades).items()}
+
+
+def open_risk(conn, account):
+    """Everything the risk gate must count: notebook positions and the bot's active spreads.
+
+    The bot's spreads live in live_trades, not positions; counting positions alone let
+    auto mode stack spreads past the position and deployed-risk caps.
+    """
+    bot = [{"ticker": t["ticker"], "width": t["width"], "contracts": t["contracts"],
+            "credit": t["credit"] if t["credit"] is not None else t["planned_credit"]}
+           for t in db.list_live_trades(conn, db.ACTIVE_STATES, account=account)]
+    return db.list_positions(conn, account=account, status="open") + bot
 
 
 def run_cycle(conn, settings, services, now_fn=utc_now, sleep=time.sleep):
@@ -99,8 +131,6 @@ def run_cycle(conn, settings, services, now_fn=utc_now, sleep=time.sleep):
         "closes": services["closes"],
         "ai_review": services["ai_review"],
         "edge_table": edge_table,
-        "open_positions": db.list_positions(conn, account=settings["account_mode"],
-                                            status="open"),
         "recently_alerted": lambda key: db.alerted_since(conn, key, iso(now_fn() - cooldown)),
     }
     decisions = []
@@ -108,6 +138,8 @@ def run_cycle(conn, settings, services, now_fn=utc_now, sleep=time.sleep):
         if i:
             sleep(settings["ticker_gap_sec"])
         for dte in settings["dtes"]:
+            # Re-read per scan: an entry earlier in this cycle must count against the caps.
+            deps["open_positions"] = open_risk(conn, settings["account_mode"])
             d = scan.scan_ticker(ticker, dte, settings, deps)
             if d["passed"]:
                 ok, err = services["send_alert"](scan.format_alert(d))
@@ -198,10 +230,12 @@ class Runner:
             self.status["last_trigger"] = "manual" if force else "schedule"
 
             table, built_at = db.load_edge_table(conn)
-            if edge_is_stale(built_at, now) or not edge_covers(table, settings["dtes"]):
+            rules = exit_rules(settings)
+            if (edge_is_stale(built_at, now) or not edge_covers(table, settings["dtes"])
+                    or not edge_matches(table, rules)):
                 self.status["state"] = "building edge table"
                 table = self.build_fn(edge_universe(settings["watchlist"]), self.load_history,
-                                      dtes=settings["dtes"])
+                                      dtes=settings["dtes"], rules=rules)
                 built_at = iso(now)
                 db.save_edge_table(conn, table, built_at)
             self.status["edge_built_at"] = built_at

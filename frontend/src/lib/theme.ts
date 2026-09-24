@@ -28,10 +28,20 @@ function systemDark(): boolean {
 const listeners = new Set<() => void>();
 let current: Theme = typeof window === "undefined" ? "light" : resolveTheme(readStored(), systemDark());
 
+// A template that only comes in one edition holds the page to it without touching the stored
+// choice, so leaving that template gives the reader's own theme back.
+let forced: Theme | null = null;
+
 function apply(theme: Theme) {
   current = theme;
-  document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.theme = forced ?? theme;
   listeners.forEach((l) => l());
+}
+
+/** Hold the page to one theme (null lets the stored choice through again). */
+export function forceTheme(theme: Theme | null) {
+  forced = theme;
+  apply(current);
 }
 
 if (typeof window !== "undefined") {
@@ -58,5 +68,5 @@ function subscribe(listener: () => void) {
 }
 
 export function useTheme(): Theme {
-  return useSyncExternalStore(subscribe, () => current, () => "light");
+  return useSyncExternalStore(subscribe, () => forced ?? current, () => "light");
 }

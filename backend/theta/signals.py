@@ -6,11 +6,14 @@ if one fired. The result dict is what both the HTTP endpoint and the scanning
 engine hand on, so the browser and the journal describe a signal identically.
 """
 from theta import strategy as cc
+from theta.engine import edge
 from theta.market import data as market_data
 from theta.market.pricing import estimate_iv
 
 ALL_MODES = ["meanrev", "trend", "ivrich"]
 OI_FLOOR = 50
+# Enough daily bars for the 20-day RV plus its one-year (252-bar) percentile window.
+HISTORY_BARS = 300
 
 
 def num(v, dp):
@@ -58,7 +61,7 @@ def spread_payload(spread, spot, em):
 
 def evaluate(ticker, dte_target, modes):
     """Synchronous version — kept for /api/signal endpoint backward compat."""
-    kl = market_data.recent_klines(ticker, 120)
+    kl = market_data.recent_klines(ticker, HISTORY_BARS)
     highs, lows, closes = kl["high"].tolist(), kl["low"].tolist(), kl["close"].tolist()
     if len(closes) < 55:
         raise RuntimeError("not enough price history")
@@ -68,7 +71,10 @@ def evaluate(ticker, dte_target, modes):
     if iv <= 0:
         raise RuntimeError("no ATM IV available (market closed or illiquid)")
     market_data.log_iv(ticker, iv)
-    rank = market_data.iv_rank(ticker, iv)
+    # The rank the edge table was bucketed on (realised-vol percentile), not the logged
+    # ATM IV: gating on one statistic and validating on another would judge a trade
+    # against a cell it never belonged to.
+    rank = edge.rank_from_closes(closes)
     rv = estimate_iv(closes, window=20, factor=1.0)
 
     ind = cc.build_indicators(highs, lows, closes, iv=iv, rv=rv, iv_rank=rank)

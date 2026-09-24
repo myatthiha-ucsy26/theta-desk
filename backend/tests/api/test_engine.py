@@ -45,6 +45,12 @@ def test_status_publishes_the_market_hours_setting(make_client, db_path):
 
 
 def test_scan_latest_returns_newest_decision_per_ticker_and_dte(client, db_path):
+    conn = db.connect(db_path)
+    try:
+        db.init(conn)
+        db.put_settings(conn, {"watchlist": ["META", "AAPL"], "dtes": [7, 14]})
+    finally:
+        conn.close()
     _log(db_path, "META", 14, "edge", "2026-09-16T15:00:00+00:00")
     _log(db_path, "META", 14, "alert", "2026-09-16T15:15:00+00:00")
     _log(db_path, "AAPL", 7, "signal", "2026-09-16T15:15:00+00:00")
@@ -52,6 +58,22 @@ def test_scan_latest_returns_newest_decision_per_ticker_and_dte(client, db_path)
     assert [(r["decision"]["ticker"], r["decision"]["stage"]) for r in rows] == [
         ("AAPL", "signal"), ("META", "alert"),
     ]
+
+
+def test_scan_latest_shows_only_what_settings_still_scans(client, db_path):
+    """A ticker or DTE dropped from Settings leaves the board; its journal rows stay."""
+    conn = db.connect(db_path)
+    try:
+        db.init(conn)
+        db.put_settings(conn, {"watchlist": ["LULU"], "dtes": [7]})
+    finally:
+        conn.close()
+    _log(db_path, "MRNA", 7, "alert", "2026-09-16T15:00:00+00:00")
+    _log(db_path, "LULU", 14, "signal", "2026-09-16T15:00:00+00:00")
+    _log(db_path, "LULU", 7, "edge", "2026-09-16T15:15:00+00:00")
+    rows = client.get("/api/scan/latest").get_json()
+    assert [(r["decision"]["ticker"], r["decision"]["dte"]) for r in rows] == [("LULU", 7)]
+    assert len(client.get("/api/journal").get_json()) == 3
 
 
 def test_journal_limit_is_respected_and_capped(client, db_path):

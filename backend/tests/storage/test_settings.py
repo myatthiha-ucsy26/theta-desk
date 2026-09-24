@@ -64,7 +64,7 @@ def test_put_settings_rejects_unknown_mode(conn):
 
 def test_autotrade_defaults():
     s = db.DEFAULT_SETTINGS
-    assert (s["tp_pct"], s["sl_multiple"], s["min_credit"]) == (50.0, 2.0, 0.30)
+    assert (s["tp_pct"], s["sl_multiple"], s["min_credit"]) == (80.0, 2.0, 0.30)
     assert (s["bot_paused"], s["bot_pause_reason"]) == (False, "")
 
 
@@ -117,3 +117,18 @@ def test_a_credential_must_be_a_string(conn, key):
     assert db.put_settings(conn, {key: "x"})[key] == "x"
     with pytest.raises(ValueError, match=key):
         db.put_settings(conn, {key: 5})
+
+def test_only_bull_puts_at_7_dte_are_on_by_default():
+    """Bull puts carried the edge under the bot's exits; bear calls and 14 DTE were thin."""
+    assert db.DEFAULT_SETTINGS["directions"] == ["SELL_PUT"]
+    assert db.DEFAULT_SETTINGS["dtes"] == [7]
+
+
+@pytest.mark.parametrize("value", [[], ["SELL_PUT", "BUY_CALL"], ["NO_TRADE"]])
+def test_put_settings_rejects_bad_directions(conn, value):
+    with pytest.raises(ValueError, match="directions"):
+        db.put_settings(conn, {"directions": value})
+
+
+def test_bull_put_only_is_accepted(conn):
+    assert db.put_settings(conn, {"directions": ["SELL_PUT"]})["directions"] == ["SELL_PUT"]

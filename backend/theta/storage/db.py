@@ -145,7 +145,10 @@ DTE_MIN, DTE_MAX = 1, 365
 
 # Engine off and manual by default: nothing scans or alerts until switched on.
 # modes defaults to ivrich only -- in the 5-year backtest it held up in the 2022
-# bear market, while trend's edge disappeared.
+# bear market, while trend's edge disappeared. Replayed under the bot's own exits
+# (27 tickers, 2021-09..2026-09), ivrich bull puts at 7 DTE with an 80% take profit
+# earned $53.5/trade over 346 trades; bear calls $27, and 14 DTE lost most of its edge
+# when IV was priced at RV rather than RV x 1.15.
 DEFAULT_SETTINGS = {
     "engine_enabled": False,
     # Whether the bot runs at all.
@@ -153,9 +156,14 @@ DEFAULT_SETTINGS = {
     # Which broker it runs against. "paper" simulates fills from live quotes and
     # touches no money; "live" places real orders through OpenD.
     "account_mode": "paper",
-    "watchlist": ["SPY", "QQQ", "META", "NVDA", "AMD", "PLTR", "AAPL", "MSFT", "AMZN", "GOOGL"],
+    # Five years of history each, a positive IV-rich backtest at 7 and 14 DTE through the 2022
+    # bear market, and weekly options deep enough to fill a two-leg spread.
+    "watchlist": ["SPY", "QQQ", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "AMD"],
     "modes": ["ivrich"],
-    "dtes": [7, 14],
+    # Which spreads a signal may become. Unticking one stops that side at the
+    # signal gate, before any quote or AI call is spent on it.
+    "directions": ["SELL_PUT"],
+    "dtes": [7],
     "interval_min": 15,
     "ticker_gap_sec": 5,
     "market_hours_only": True,
@@ -177,8 +185,10 @@ DEFAULT_SETTINGS = {
     "ai_model": "",
     "telegram_bot_token": "",
     "telegram_chat_id": "",
-    # Live autotrade, used only while mode is "auto".
-    "tp_pct": 50.0,
+    # Live autotrade, used only while mode is "auto". The stop fires when buying the
+    # spread back costs credit x (1 + sl_multiple): 2.0 closes at 3x the credit, a loss
+    # of twice the credit. A 50% take profit gave up $15-18/trade against 80%.
+    "tp_pct": 80.0,
     "sl_multiple": 2.0,
     "min_credit": 0.30,
     "bot_paused": False,
@@ -191,6 +201,7 @@ DEFAULT_SETTINGS = {
 }
 
 ACCOUNT_MODES = ("paper", "live")
+DIRECTIONS = ("SELL_PUT", "SELL_CALL")
 
 
 # The database holds the AI key and the Telegram token in clear text, so it is
@@ -353,6 +364,8 @@ def _validate(key, value):
         raise ValueError("min_credit must be at least 0.05")
     if key == "modes" and (not value or any(m not in SIGNAL_MODES for m in value)):
         raise ValueError(f"modes must be a non-empty subset of {list(SIGNAL_MODES)}")
+    if key == "directions" and (not value or any(v not in DIRECTIONS for v in value)):
+        raise ValueError(f"directions must be a non-empty subset of {list(DIRECTIONS)}")
     if key == "watchlist":
         value = [str(t).strip().upper() for t in value if str(t).strip()]
         if not value:

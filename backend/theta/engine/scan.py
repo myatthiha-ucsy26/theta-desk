@@ -5,7 +5,8 @@ injected callable in `deps`, so the whole decision path is testable offline and
 the same function will serve auto mode later.
 
 Gates, in order. The first failure stops the scan and is recorded as the stage:
-  signal     strategy verdict for the selected modes is not NO_TRADE
+  signal     strategy verdict for the selected modes is not NO_TRADE, and its
+             direction (bull put / bear call) is switched on in settings
   tradeable  a spread fits (open interest floor, $500 risk cap)
   edge       pooled 5-year backtest shows positive expectancy for this cell
   risk       position count, deployed risk, one position per ticker
@@ -103,6 +104,10 @@ def scan_ticker(ticker, dte, settings, deps):
     if signal["direction"] == cc.NO_TRADE:
         d["reason"] = "; ".join(f"{m}: {signal['verdicts'][m]['reason']}" for m in modes)
         return d
+    if signal["direction"] not in settings["directions"]:
+        side = edge.SIDE_NAMES[signal["direction"]]
+        d["reason"] = f"{side} signal, but {side}s are switched off in settings"
+        return d
 
     d["stage"] = "tradeable"
     if not signal.get("spread"):
@@ -163,12 +168,13 @@ def _edge_gate(ticker, dte, signal, modes, settings, deps, d):
     for m in fired:
         ok, why = edge.passes(deps["edge_table"], m, dte, rank,
                                  min_n=settings["edge_min_n"],
-                                 min_expectancy=settings["edge_min_expectancy"])
+                                 min_expectancy=settings["edge_min_expectancy"],
+                                 direction=signal["direction"])
         if not ok:
             failures.append(why)
             continue
         d["edge"].append(why)
-        stats = deps["edge_table"][(m, dte, edge.iv_bucket(rank))]
+        stats = edge.cell(deps["edge_table"], m, dte, rank, signal["direction"])
         if stats.get("win_rate") is not None and (best is None or stats["win_rate"] > best["win_rate"]):
             best = stats
     if not d["edge"]:

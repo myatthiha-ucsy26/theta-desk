@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
+import { PanelFrame } from "../lib/panelFrame";
 
 /**
  * A section of the page, not a box on it: a serif heading over a rule, then content set
@@ -12,7 +13,8 @@ export function Panel({ title, actions, children, className = "" }: {
   children: ReactNode;
   className?: string;
 }) {
-  return (
+  const Frame = useContext(PanelFrame);
+  const panel = (
     <section className={`panel flex min-w-0 flex-col ${className}`}>
       {(title || actions) && (
         <header className="panel-head flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b border-ink pb-2">
@@ -25,4 +27,5 @@ export function Panel({ title, actions, children, className = "" }: {
       <div className="panel-body min-w-0 pt-4">{children}</div>
     </section>
   );
+  return Frame ? <Frame>{panel}</Frame> : panel;
 }

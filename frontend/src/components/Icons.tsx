@@ -2,6 +2,8 @@
 // Drawn light (1.5) so they sit quietly beside the Newsreader headings.
 import type { ReactNode } from "react";
 import type { Screen } from "../lib/route";
+import { useTemplate } from "../lib/templates";
+import { GATE_3D, Icon3D } from "./holo/Icons3D";
 
 function Icon({ children, size = 16 }: { children: ReactNode; size?: number }) {
   return (
@@ -49,7 +51,7 @@ export function Mark({ size = 22 }: { size?: number }) {
   );
 }
 
-export const SCREEN_ICONS: Record<Screen, ReactNode> = {
+const LINE_SCREEN_ICONS: Record<Screen, ReactNode> = {
   // Radar: the engine sweeping the watchlist.
   scan: (
     <Icon>
@@ -93,6 +95,10 @@ export const SCREEN_ICONS: Record<Screen, ReactNode> = {
 
 /** The bot itself: a controller with an antenna, for the panel that reports what it is doing. */
 export function BotIcon() {
+  return useTemplate() === "holo" ? <Icon3D name="bot" /> : <LineBotIcon />;
+}
+
+function LineBotIcon() {
   return (
     <Icon>
       <rect x="4" y="8" width="16" height="11" />
@@ -106,7 +112,7 @@ export function BotIcon() {
 }
 
 /** One glyph per gate in the pipeline strip, keyed by the gate's own name. */
-export const GATE_ICONS: Record<string, ReactNode> = {
+const LINE_GATE_ICONS: Record<string, ReactNode> = {
   // Waves: the regime the signal reads.
   Signal: (
     <Icon size={15}>
@@ -150,6 +156,25 @@ export const GATE_ICONS: Record<string, ReactNode> = {
     </Icon>
   ),
 };
+
+/** The line glyph, or its 3D stand-in when the desk is set in Holo. */
+function Swap({ line, holo }: { line: ReactNode; holo: ReactNode }) {
+  return <>{useTemplate() === "holo" ? holo : line}</>;
+}
+
+export const SCREEN_ICONS = Object.fromEntries(
+  (Object.keys(LINE_SCREEN_ICONS) as Screen[]).map((s) => [
+    s,
+    <Swap key={s} line={LINE_SCREEN_ICONS[s]} holo={<Icon3D name={s} />} />,
+  ]),
+) as Record<Screen, ReactNode>;
+
+export const GATE_ICONS: Record<string, ReactNode> = Object.fromEntries(
+  Object.entries(LINE_GATE_ICONS).map(([gate, line]) => [
+    gate,
+    <Swap key={gate} line={line} holo={<Icon3D name={GATE_3D[gate]} />} />,
+  ]),
+);
 
 export function MoonIcon() {
   return (

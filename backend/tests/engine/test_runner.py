@@ -1,4 +1,5 @@
 import datetime as dt
+import uuid
 
 import pytest
 
@@ -29,8 +30,9 @@ def signal(ticker, dte):
     }
 
 
-EDGE = {("ivrich", 14, "high"): {"n": 600, "expectancy": 40.0},
-        ("ivrich", 7, "high"): {"n": 600, "expectancy": 45.0}}
+RULES = runner.exit_rules(store.DEFAULT_SETTINGS)
+EDGE = {("ivrich", 14, "high"): {"n": 600, "expectancy": 40.0, "rules": RULES},
+        ("ivrich", 7, "high"): {"n": 600, "expectancy": 45.0, "rules": RULES}}
 
 
 @pytest.fixture
@@ -165,9 +167,11 @@ def test_edge_covers_needs_a_cell_for_every_configured_dte():
 
 # ---------------- Runner.tick ----------------
 
-def make_runner(path, svc, now, builds, dtes_seen=None):
-    def fake_build(tickers, load_history, dtes=(7, 14)):
+def make_runner(path, svc, now, builds, dtes_seen=None, rules_seen=None):
+    def fake_build(tickers, load_history, dtes=(7, 14), rules=None):
         builds.append(list(tickers))
+        if rules_seen is not None:
+            rules_seen.append(rules)
         if dtes_seen is not None:
             dtes_seen.append(list(dtes))
         return EDGE
@@ -216,6 +220,42 @@ def test_tick_reuses_fresh_edge_table(db):
     assert builds == []
 
 
+def test_tick_builds_the_table_under_the_bots_exit_rules(db):
+    path, conn = db
+    store.put_settings(conn, {"engine_enabled": True, "tp_pct": 70.0, "sl_multiple": 1.5})
+    svc, builds, rules = Services(), [], []
+    make_runner(path, svc, OPEN, builds, rules_seen=rules).tick()
+    assert rules == [{"tp_pct": 70.0, "sl_multiple": 1.5, "width": 5.0}]
+
+
+def test_tick_rebuilds_when_the_exit_rules_change(db):
+    """A table measured under other exits describes a different trade."""
+    path, conn = db
+    store.put_settings(conn, {"engine_enabled": True})
+    store.save_edge_table(conn, EDGE, "2026-09-16T14:00:00+00:00")
+    store.put_settings(conn, {"tp_pct": 60.0})
+    svc, builds = Services(), []
+    make_runner(path, svc, OPEN, builds).tick()
+    assert len(builds) == 1
+
+
+def test_a_table_built_before_exit_rules_existed_is_rebuilt(db):
+    path, conn = db
+    store.put_settings(conn, {"engine_enabled": True})
+    legacy = {k: {kk: vv for kk, vv in v.items() if kk != "rules"} for k, v in EDGE.items()}
+    store.save_edge_table(conn, legacy, "2026-09-16T14:00:00+00:00")
+    svc, builds = Services(), []
+    make_runner(path, svc, OPEN, builds).tick()
+    assert len(builds) == 1
+
+
+def test_build_edge_table_stamps_every_cell_with_its_rules():
+    df = __import__("tests.research.test_backtest_records", fromlist=["x"])._random_walk()
+    rules = {"tp_pct": 50.0, "sl_multiple": 2.0, "width": 5.0}
+    table = runner.build_edge_table(["T"], lambda tk: df, dtes=[14], rules=rules)
+    assert table and all(cell["rules"] == rules for cell in table.values())
+
+
 def test_tick_rebuilds_when_a_new_expiration_has_no_cells(db):
     """A custom DTE arrives with no backtest data, so the table rebuilds for it."""
     path, conn = db
@@ -231,7 +271,7 @@ def test_tick_records_errors_instead_of_crashing(db):
     path, conn = db
     store.put_settings(conn, {"engine_enabled": True})
 
-    def broken_build(tickers, load_history, dtes=(7, 14)):
+    def broken_build(tickers, load_history, dtes=(7, 14), rules=None):
         raise RuntimeError("OpenD not reachable")
     r = runner.Runner(path, Services().as_dict(), load_history=lambda tk: None,
                          now_fn=lambda: OPEN, sleep=lambda s: None, build_fn=broken_build)
@@ -302,3 +342,46 @@ def test_switching_to_auto_mid_cycle_applies_to_the_rest_of_that_cycle(db):
     svc["autotrade"] = lambda c, d, s, now: handed.append(d["ticker"]) or "entry sent: test"
     runner.run_cycle(conn, stale, svc, now_fn=lambda: OPEN, sleep=lambda s: None)
     assert handed == ["AAA"]
+
+
+# ---------------- risk gate sees the bot's own spreads ----------------
+
+def _bot_trade(conn, ticker, account="paper", state="open"):
+    store.insert_live_trade(conn, {
+        "id": f"t-{ticker}-{uuid.uuid4().hex[:6]}", "account": account, "ticker": ticker, "direction": "SELL_PUT",
+        "expiry": "2026-10-02", "short_code": f"{ticker}P95", "long_code": f"{ticker}P90",
+        "short_strike": 95.0, "long_strike": 90.0, "width": 5.0, "contracts": 1,
+        "planned_credit": 1.0, "state": state, "opened_at": "2026-09-16T14:00:00+00:00",
+    })
+
+
+def test_risk_gate_counts_an_open_bot_spread_on_the_same_ticker(db):
+    path, conn = db
+    store.save_edge_table(conn, EDGE, "2026-09-16T06:00:00+00:00")
+    _bot_trade(conn, "AAA", state="entering")
+    decisions = runner.run_cycle(conn, store.get_settings(conn), Services().as_dict(),
+                                 now_fn=lambda: OPEN, sleep=lambda s: None)
+    by = {d["ticker"]: d for d in decisions}
+    assert by["AAA"]["stage"] == "risk" and "already holding" in by["AAA"]["reason"]
+    assert by["BBB"]["stage"] == "alert"
+
+
+def test_risk_gate_sees_a_spread_the_bot_entered_earlier_in_the_same_cycle(db):
+    path, conn = db
+    store.put_settings(conn, {"dtes": [7, 14], "watchlist": ["AAA"]})
+    store.save_edge_table(conn, EDGE, "2026-09-16T06:00:00+00:00")
+    store.put_settings(conn, {"mode": "auto"})
+    svc = Services().as_dict()
+    svc["autotrade"] = lambda c, d, s, now: _bot_trade(c, d["ticker"]) or "entry sent"
+    decisions = runner.run_cycle(conn, store.get_settings(conn), svc,
+                                 now_fn=lambda: OPEN, sleep=lambda s: None)
+    assert [d["stage"] for d in decisions] == ["alert", "risk"]
+
+
+def test_risk_gate_ignores_bot_spreads_in_the_other_account(db):
+    path, conn = db
+    store.save_edge_table(conn, EDGE, "2026-09-16T06:00:00+00:00")
+    _bot_trade(conn, "AAA", account="live")
+    decisions = runner.run_cycle(conn, store.get_settings(conn), Services().as_dict(),
+                                 now_fn=lambda: OPEN, sleep=lambda s: None)
+    assert [d["stage"] for d in decisions] == ["alert", "alert"]

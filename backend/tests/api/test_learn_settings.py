@@ -45,6 +45,20 @@ def test_settings_reset_restores_defaults(client, db_path):
     assert client.get("/api/settings").get_json() == db.DEFAULT_SETTINGS
 
 
+def test_default_watchlist_is_the_backtested_ten():
+    # Each has five years of cached history, a positive IV-rich backtest at 7 and 14 DTE
+    # including the 2022 bear market, and liquid weekly options.
+    assert db.DEFAULT_SETTINGS["watchlist"] == [
+        "SPY", "QQQ", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "AMD"]
+
+
+def test_settings_defaults_serves_the_default_watchlist_without_saving(client, db_path):
+    client.post("/api/settings", json={"watchlist": ["MRNA"]})
+    body = client.get("/api/settings/defaults").get_json()
+    assert body == {"watchlist": db.DEFAULT_SETTINGS["watchlist"]}
+    assert client.get("/api/settings").get_json()["watchlist"] == ["MRNA"]
+
+
 class FakeResponse(io.BytesIO):
     def __enter__(self):
         return self

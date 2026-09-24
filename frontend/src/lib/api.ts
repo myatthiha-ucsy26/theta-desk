@@ -1,4 +1,5 @@
 // Typed client for the Flask API. Field names mirror app.py exactly.
+import { DEMO } from "./demo/flag";
 
 export type Direction = "SELL_PUT" | "SELL_CALL" | "NO_TRADE";
 export type Stage = "signal" | "tradeable" | "edge" | "risk" | "ai" | "dedupe" | "alert";
@@ -57,6 +58,7 @@ export type AccountMode = "paper" | "live";
 
 export interface Settings {
   engine_enabled: boolean; mode: "manual" | "auto"; account_mode: AccountMode; watchlist: string[]; modes: SignalMode[];
+  directions: Exclude<Direction, "NO_TRADE">[];
   dtes: number[]; interval_min: number; ticker_gap_sec: number; market_hours_only: boolean;
   edge_min_n: number; edge_min_expectancy: number; max_open_positions: number;
   max_deployed_risk: number; ai_enabled: boolean; ai_allow_caution: boolean;
@@ -188,6 +190,9 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // The demo desk answers from its simulated book and never reaches the network. DEMO is a
+  // build-time constant, so the real desk's bundle carries none of this.
+  if (DEMO) return (await import("./demo/router")).demoRequest(path, init) as Promise<T>;
   const resp = await fetch(path, {
     ...init,
     headers: init?.body ? { "Content-Type": "application/json", ...init.headers } : init?.headers,
@@ -215,6 +220,7 @@ export const api = {
   resumeBot: () => post<BotStatus>("/api/bot/resume"),
   closeAllBot: () => post<{ closing: number }>("/api/bot/close-all", { confirm: "CLOSE" }),
   resetSettings: () => post<Settings>("/api/settings/reset"),
+  settingsDefaults: () => request<{ watchlist: string[] }>("/api/settings/defaults"),
   signal: (ticker: string, dte: number, modes: SignalMode[]) =>
     request<Signal>(`/api/signal?ticker=${encodeURIComponent(ticker)}&dte=${dte}&modes=${modes.join(",")}`),
   signalStreamUrl: (ticker: string, dte: number, modes: SignalMode[]) =>

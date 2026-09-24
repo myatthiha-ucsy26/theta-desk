@@ -134,9 +134,9 @@ flowchart TD
 
 | Gate | Asks |
 |---|---|
-| `signal` | Does the strategy verdict for the selected modes say anything but NO_TRADE? |
+| `signal` | Does the strategy verdict for the selected modes say anything but NO_TRADE, and is that side (bull put or bear call) switched on? |
 | `tradeable` | Does a spread actually fit (open-interest floor, $500 max risk per trade)? |
-| `edge` | Does the pooled 5-year backtest show positive expectancy for this IV-rank bucket, over at least 100 trades? |
+| `edge` | Does the pooled 5-year backtest show positive expectancy for this IV-rank bucket, over at least 100 trades? And does the signal's own side (bull puts or bear calls alone) clear the same bar? |
 | `risk` | Position count, total deployed risk, one position per ticker. |
 | `ai` | Optional event-risk review (earnings, news) against an AI endpoint of your choosing. |
 | `dedupe` | Have we already alerted this same spread inside the cooldown? |
@@ -150,10 +150,12 @@ mode, which always runs `risk` and `ai`.
 |---|---|
 | `meanrev` | RSI < 35 or %B < 0.10 **and** stabilising (a green candle). Refuses a falling knife: a new 5-day low with ADX > 25 is no trade. |
 | `trend` | EMA20/EMA50 cross with price confirming and ADX > 20. Carries a standing caution: it showed no edge through the 2022 bear market. |
-| `ivrich` | IV rank ≥ 2/3 (or IV/RV > 1.2 before 20 days of history exist), then mean reversion on top. The default. |
+| `ivrich` | Vol rank ≥ 2/3 (or IV/RV > 1.2 when there is too little history to rank), then mean reversion on top. The default. |
 
-"IV rank" has one definition, a percentile in `theta/stats.py`, shared by the
-live path and the backtest. It is a percentile and not a min-max
+"IV rank" (vol rank) has one definition, a percentile in `theta/stats.py`, and
+one input: the 20-day realised vol ranked over the past year. The live path and
+the backtest both rank that, because there is no free history of option IV to
+backtest on, and a threshold measured on one input means nothing applied to another. It is a percentile and not a min-max
 normalisation because one historical outlier would otherwise compress every
 later reading.
 
@@ -165,6 +167,13 @@ rebuilt from a rolling 5-year backtest. It always pools over a fixed
 alone. A short watchlist leaves cells far under the 100-trade minimum (two
 tickers gave `ivrich`/14d/high only 44 trades), and every alert would come back
 unvalidated. Pooling lets the gate work from day one.
+
+The backtest trades the way the bot does: a 5-wide spread, marked at each daily
+close and closed at the take profit or the stop in Settings, otherwise held to
+expiry. Every cell records the exit rules it was measured under, and changing
+them rebuilds the table. Held to expiry, `ivrich` looked like +$41 a trade; under
+a 50% take profit it was +$15 to +$24, so a table that ignored the exits would
+approve trades on a number the bot never earns.
 
 ### The loops
 
@@ -180,8 +189,8 @@ flowchart TD
     end
     subgraph monitor["Monitor thread - every 60 s"]
       direction TB
-      M1[for each open position] --> M2{take profit at 50%?}
-      M2 -->|no| M3{stop at 2x credit?}
+      M1[for each open position] --> M2{take profit at 80%?}
+      M2 -->|no| M3{buy-back at 3x credit?}
       M3 -->|no| M4{AI says exit?}
       M4 -->|no| M6[hold]
       M2 -->|yes| M5[close it]
@@ -196,8 +205,9 @@ Two background threads, both off by default:
   passes. `engine_enabled` turns it on. It rebuilds the edge table from a fresh
   backtest whenever it is more than 24 hours old.
 - **The monitor** watches open live positions once a minute and is the *only*
-  thing allowed to ask the broker to act. Default exits: take profit at 50% of
-  the credit, stop out at 2× the credit, or an AI exit review.
+  thing allowed to ask the broker to act. Default exits: take profit once 80%
+  of the credit is kept, stop out when buying back costs 3× the credit (a loss of
+  2× the credit, `sl_multiple: 2`), close on expiry day at 3 pm, or an AI exit review.
 
 Auto mode is a setting the monitor reads, not a separate code path, so manual
 and auto cannot drift apart. Switching it on requires typing `LIVE` and passing
@@ -442,10 +452,18 @@ rules) lives in the Settings screen and is validated server-side before it is
 stored.
 
 Defaults worth knowing: **paper account**, engine **off**, bot **stopped**,
-`ivrich` only, DTEs 7 and 14, scan every 15 minutes during market hours, max 5
-open positions, max $2,500 deployed, $500 risk per trade, take profit 50%, stop
-at 2× credit, $10,000 simulated cash and $0.65 per contract in paper
-commissions.
+`ivrich` only, bull puts only, 7 DTE only, scan every 15 minutes during market
+hours, max 5 open positions (bot spreads included), max $2,500 deployed, $500 risk
+per trade, take profit at 80% of the credit, stop when the buy-back reaches 3× the
+credit (a loss of 2× the credit), $10,000 simulated cash and $0.65 per contract in
+paper commissions.
+
+Why those: replayed under the bot's own exits over five years and 27 tickers,
+`ivrich` bull puts at 7 DTE made +$53.5 a trade over 346 trades with an 80% take
+profit, against +$24 for both sides at 7 and 14 DTE with a 50% one. Bear calls
+earned about half as much. 14 DTE lost most of its edge when options were priced
+at realised vol instead of 1.15× it, which makes it the more fragile choice.
+Bear calls and 14 DTE are one tick away in Settings.
 
 ## Market data over MCP
 

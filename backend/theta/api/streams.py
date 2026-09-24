@@ -9,6 +9,7 @@ import json
 
 from theta import signals
 from theta import strategy as cc
+from theta.engine import edge
 from theta.market import data as market_data
 from theta.market.pricing import estimate_iv
 from theta.research.backtest import aggregate, run_backtest
@@ -23,8 +24,8 @@ def evaluate_stream(ticker, dte_target, modes):
     try:
         # ---- DATA step ----
         yield emit("log", step="data",
-                   msg=f"Fetching 120 daily klines for {ticker} from OpenD…")
-        kl = market_data.recent_klines(ticker, 120)
+                   msg=f"Fetching {signals.HISTORY_BARS} daily klines for {ticker} from OpenD…")
+        kl = market_data.recent_klines(ticker, signals.HISTORY_BARS)
         highs, lows, closes = kl["high"].tolist(), kl["low"].tolist(), kl["close"].tolist()
         if len(closes) < 55:
             yield emit("abort", msg=f"Not enough price history ({len(closes)} bars, need ≥55)")
@@ -46,8 +47,9 @@ def evaluate_stream(ticker, dte_target, modes):
             yield emit("abort", msg="No ATM IV available (market closed or illiquid)")
             return
         market_data.log_iv(ticker, iv)
-        rank = market_data.iv_rank(ticker, iv)
-        rank_str = f"rank {rank:.2f}" if rank is not None else "rank building (< 20 days)"
+        rank = edge.rank_from_closes(closes)
+        rank_str = (f"vol rank {rank:.2f}, 20d RV percentile over 1y" if rank is not None
+                    else "too little history to rank vol")
         yield emit("log", step="data", msg=f"ATM IV: {iv * 100:.1f}%  ({rank_str})")
 
         # ---- CALC step ----

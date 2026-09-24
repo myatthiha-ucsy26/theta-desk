@@ -78,6 +78,12 @@ def api_settings_reset():
         conn.close()
 
 
+@bp.route("/api/settings/defaults")
+def api_settings_defaults():
+    """The default watchlist, to offer back without resetting anything else."""
+    return jsonify({"watchlist": db.DEFAULT_SETTINGS["watchlist"]})
+
+
 @bp.route("/api/alert/telegram", methods=["POST"])
 def api_alert_telegram():
     body = request.get_json(silent=True)

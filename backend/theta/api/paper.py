@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request
 from theta import paper, services
 from theta.broker import account, manage, settle
 from theta.context import ctx
-from theta.engine import scan
+from theta.engine import runner, scan
 from theta.market import data as market_data
 from theta.storage import db
 
@@ -178,8 +178,7 @@ def api_size_preview():
     conn = ctx().connect()
     try:
         settings = db.get_settings(conn)
-        open_positions = db.list_positions(conn, account=settings["account_mode"],
-                                           status="open")
+        open_positions = runner.open_risk(conn, settings["account_mode"])
     finally:
         conn.close()
     max_loss = float(spread["max_loss"])

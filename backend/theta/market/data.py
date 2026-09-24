@@ -15,7 +15,6 @@ from futu import OpenQuoteContext, RET_OK, KLType
 from theta.market import ratelimit
 from theta.market import surface
 
-from theta import stats
 
 HOST = os.environ.get("OPEND_HOST", "127.0.0.1")
 PORT = int(os.environ.get("OPEND_PORT", "11111"))
@@ -67,21 +66,32 @@ def norm(sym: str) -> str:
     return sym if "." in sym else f"US.{sym}"
 
 
-def fetch_klines(ticker: str, start: str, end: str, refresh: bool = False) -> pd.DataFrame:
+def fetch_klines(ticker: str, start: str, end: str, refresh: bool = False,
+                 today: dt.date = None) -> pd.DataFrame:
     """Daily OHLCV DataFrame (columns: date, open, high, low, close, volume).
 
-    Cached per ticker. If the cache exists and covers [start, end], it is used unless
-    refresh=True. Otherwise OpenD is queried and the cache is (re)written.
+    Complete bars only: today's bar is still forming, so it is neither cached nor
+    returned. Cached per ticker. The cache is used when it reaches back to `start` and
+    is current (it reaches `end`, or was refreshed today). Otherwise OpenD is queried
+    from the earlier of `start` and the cache's first bar, so a short request never
+    shrinks a longer cache.
     """
+    today = today or dt.date.today()
     os.makedirs(CACHE_DIR, exist_ok=True)
     path = os.path.join(CACHE_DIR, f"{ticker.upper().replace('.', '_')}.csv")
-    if not refresh and os.path.exists(path):
+    lo, hi = pd.Timestamp(start), pd.Timestamp(end)
+    fetch_from = start
+    if os.path.exists(path):
         df = pd.read_csv(path, parse_dates=["date"])
-        if df["date"].min() <= pd.Timestamp(start) and df["date"].max() >= pd.Timestamp(end):
-            return df[(df["date"] >= pd.Timestamp(start)) & (df["date"] <= pd.Timestamp(end))].reset_index(drop=True)
+        if len(df):
+            fetch_from = min(lo, df["date"].min()).strftime("%Y-%m-%d")
+            current = (df["date"].max() >= hi
+                       or dt.date.fromtimestamp(os.path.getmtime(path)) == today)
+            if not refresh and df["date"].min() <= lo and current:
+                return df[(df["date"] >= lo) & (df["date"] <= hi)].reset_index(drop=True)
 
     ret, k, _ = _call("request_history_kline",
-        norm(ticker), start=start, end=end, ktype=KLType.K_DAY, max_count=1500)
+        norm(ticker), start=fetch_from, end=end, ktype=KLType.K_DAY, max_count=1500)
     if ret != RET_OK:
         raise RuntimeError(f"OpenD kline error for {ticker}: {k}")
     df = pd.DataFrame({
@@ -92,8 +102,9 @@ def fetch_klines(ticker: str, start: str, end: str, refresh: bool = False) -> pd
         "close": k["close"].astype(float),
         "volume": k["volume"].astype(float),
     })
+    df = df[df["date"] < pd.Timestamp(today)].reset_index(drop=True)
     df.to_csv(path, index=False)
-    return df
+    return df[(df["date"] >= lo) & (df["date"] <= hi)].reset_index(drop=True)
 
 
 def recent_klines(ticker: str, bars: int = 120) -> pd.DataFrame:
@@ -173,6 +184,15 @@ def _count(v) -> int:
     return 0 if n != n else int(n)
 
 
+def _number(v):
+    """A snapshot value as a float, or None for NaN, 'N/A' and missing."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f
+
+
 def fetch_legs(ticker: str, exp: str, side: str, spot: float, pct: float = 0.15):
     """Option legs for one side with live delta, mid price, IV, bid/ask, OI and volume.
 
@@ -194,17 +214,17 @@ def fetch_legs(ticker: str, exp: str, side: str, spot: float, pct: float = 0.15)
         if ret != RET_OK:
             raise RuntimeError(f"OpenD snapshot error: {s}")
         for _, r in s.iterrows():
-            b, a = r.get("bid_price"), r.get("ask_price")
-            mid = (b + a) / 2 if (b and a and b > 0 and a > 0) else r.get("last_price")
-            dl = r.get("option_delta")
-            if mid is None or dl is None:
+            # Mid of a live two-sided quote only. A zero bid is real (far OTM); a missing
+            # ask, or NaN anywhere, is not -- and the last trade can be hours stale.
+            b, a, dl = _number(r.get("bid_price")), _number(r.get("ask_price")), _number(r.get("option_delta"))
+            if b is None or a is None or dl is None or b < 0 or a <= 0:
                 continue
             legs.append({
-                "strike": float(strike_by[r["code"]]), "delta": float(dl),
-                "price": float(mid), "iv": r.get("option_implied_volatility"),
+                "strike": float(strike_by[r["code"]]), "delta": dl,
+                "price": (b + a) / 2, "iv": r.get("option_implied_volatility"),
                 "oi": _count(r.get("option_open_interest")),
                 "volume": _count(r.get("volume")),
-                "code": r["code"], "bid": float(b or 0), "ask": float(a or 0),
+                "code": r["code"], "bid": b, "ask": a,
             })
     legs.sort(key=lambda x: x["strike"])
     return legs
@@ -288,19 +308,6 @@ def log_iv(ticker: str, iv: float, day: str = None):
         w = csv.writer(f)
         for d in sorted(rows):
             w.writerow([d, rows[d]])
-
-
-def iv_rank(ticker: str, cur_iv: float, min_days: int = 20):
-    """True IV rank (0..1) from logged history, or None if too few days logged.
-
-    Percentile via stats.percentile_rank — the same statistic the backtest uses.
-    """
-    path = os.path.join(IV_DIR, f"{ticker.upper()}.csv")
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        vals = [float(v) for _, v in csv.reader(f)]
-    return stats.percentile_rank(vals, cur_iv, min_count=min_days)
 
 
 def next_earnings(ticker: str, today=None, horizon_days: int = 14):

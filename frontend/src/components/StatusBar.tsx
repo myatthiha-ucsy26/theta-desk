@@ -9,6 +9,8 @@ import { usePoll } from "../lib/usePoll";
 import { BotControl } from "./BotControl";
 import { StatusBadge } from "./StatusBadge";
 import { toast } from "../lib/toast";
+import { DemoBadge } from "./DemoMarks";
+import { DEMO } from "../lib/demo/flag";
 
 const POLL_MS = 15000;
 const BUSY_POLL_MS = 3000;
@@ -69,6 +71,7 @@ export function StatusBar() {
         {/* Which account is trading leads the line: it is the one fact that changes
             what every other item on this page means. */}
         <FolioItem first>
+          {DEMO && <DemoBadge />}
           <span title={account.hint}>
             <StatusBadge tone={account.tone} label={account.label} />
           </span>

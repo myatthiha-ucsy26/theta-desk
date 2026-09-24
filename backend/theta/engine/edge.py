@@ -27,24 +27,60 @@ def iv_bucket(rank):
     return "high"
 
 
+SIDE_NAMES = {"SELL_PUT": "bull put", "SELL_CALL": "bear call"}
+
+
 def build_edge_table(trades):
-    """Group trades by (mode, dte, iv_bucket) and aggregate each cell."""
+    """Group trades by (mode, dte, iv_bucket) and aggregate each cell.
+
+    Each cell also carries its bull puts and bear calls separately under "sides".
+    The two can disagree: with IV priced near real chains, ivrich/14d/high was
+    +$19/trade pooled while its bear calls alone lost $2/trade.
+    """
     groups = {}
     for t in trades:
         key = (t["mode"], t["dte"], iv_bucket(t.get("iv_rank")))
         groups.setdefault(key, []).append(t)
-    return {k: aggregate(v) for k, v in groups.items()}
+    table = {}
+    for k, v in groups.items():
+        by_side = {}
+        for t in v:
+            by_side.setdefault(t["direction"], []).append(t)
+        table[k] = {**aggregate(v), "sides": {d: aggregate(ts) for d, ts in by_side.items()}}
+    return table
 
 
-def passes(table, mode, dte, rank, min_n: int = 100, min_expectancy: float = 0.0):
-    """(ok, reason) for whether this setup has demonstrated edge."""
-    bucket = iv_bucket(rank)
-    stats = table.get((mode, dte, bucket))
+def cell(table, mode, dte, rank, direction=None):
+    """The stats the gate judges: the direction's side of the cell when the cell
+    has sides, else the pooled cell. None when there is nothing to judge."""
+    stats = table.get((mode, dte, iv_bucket(rank)))
+    if stats and direction and "sides" in stats:
+        return stats["sides"].get(direction)
+    return stats
+
+
+def passes(table, mode, dte, rank, min_n: int = 100, min_expectancy: float = 0.0,
+           direction=None):
+    """(ok, reason) for whether this setup has demonstrated edge.
+
+    With a direction, the direction's own side must also have edge. The side is
+    an extra requirement, never a substitute: a strong side cannot rescue a cell
+    that fails pooled. A table stored before sides existed is judged pooled only
+    until its next rebuild.
+    """
+    label = f"{mode}/{dte}d/IV-{iv_bucket(rank)}"
+    pooled = table.get((mode, dte, iv_bucket(rank)))
+    ok, why = _judge(pooled, label, min_n, min_expectancy)
+    if not ok or not (direction and "sides" in pooled):
+        return ok, why
+    return _judge(pooled["sides"].get(direction),
+                  f"{label} {SIDE_NAMES.get(direction, direction)}", min_n, min_expectancy)
+
+
+def _judge(stats, label, min_n, min_expectancy):
     if not stats or stats.get("n", 0) == 0:
-        return False, f"no backtest data for {mode}/{dte}d/IV-{bucket}"
-
+        return False, f"no backtest data for {label}"
     n, exp = stats["n"], stats["expectancy"]
-    label = f"{mode}/{dte}d/IV-{bucket}"
     if n < min_n:
         return False, f"{label}: only {n} trades, need {min_n} (UNVALIDATED)"
     if exp <= min_expectancy:

@@ -1,5 +1,8 @@
 // Fetch now, then every intervalMs while the tab is visible. Keeps the last good data on error.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DEMO } from "./demo/flag";
+
+const DEMO_POLL_MS = 3000;
 
 export interface Poll<T> {
   data: T | null;
@@ -28,9 +31,11 @@ export function usePoll<T>(load: () => Promise<T>, intervalMs: number): Poll<T> 
 
   useEffect(() => {
     void refresh();
+    // The demo desk has no server to spare, so it refreshes every few seconds and its book ticks.
+    const every = DEMO ? Math.min(intervalMs, DEMO_POLL_MS) : intervalMs;
     const id = window.setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
-    }, intervalMs);
+    }, every);
     return () => window.clearInterval(id);
   }, [refresh, intervalMs]);
 

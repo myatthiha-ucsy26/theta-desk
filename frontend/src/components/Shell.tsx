@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { hrefFor, SCREENS, type Screen } from "../lib/route";
 import { useTemplate } from "../lib/templates";
 import { setTheme, useTheme } from "../lib/theme";
@@ -8,7 +8,7 @@ import { Mark, MoonIcon, SCREEN_ICONS, SunIcon } from "./Icons";
 import { StatusBar } from "./StatusBar";
 import { Toaster } from "./Toaster";
 
-const LABELS: Record<Screen, string> = {
+export const LABELS: Record<Screen, string> = {
   scan: "Scan",
   study: "Study",
   manage: "Manage",
@@ -32,16 +32,27 @@ const DESCRIPTIONS: Record<Screen, string> = {
  * and the rules. Set above any of those, the paper and real books are two screens' worth of numbers
  * that only push the work down the page.
  */
-const showsStats = (screen: Screen) => screen === "scan" || screen === "manage";
+export const showsStats = (screen: Screen) => screen === "scan" || screen === "manage";
 
 /**
  * The page. Which arrangement you get is the template's business: Broadsheet leads with a
  * nameplate and a section bar across the top, Minimal sets the same parts in a rail down the
- * left and lets the work surface run from the rail outwards. Both render the same four things in
+ * left and lets the work surface run from the rail outwards, and Holo floats them as glass over
+ * a 3D band. Both render the same four things in
  * the same order — who the desk is, where you are, what the market did, what the book is worth.
  */
+// Holo brings a motion library and a WebGL orb; only a desk set in Holo downloads either.
+const HoloShell = lazy(() => import("./holo/HoloShell"));
+
 export function Shell({ screen, children }: { screen: Screen; children: ReactNode }) {
   const template = useTemplate();
+  if (template === "holo") {
+    return (
+      <Suspense fallback={<div className="min-h-full bg-paper" />}>
+        <HoloShell screen={screen}>{children}</HoloShell>
+      </Suspense>
+    );
+  }
   return template === "minimal" ? (
     <RailShell screen={screen}>{children}</RailShell>
   ) : (

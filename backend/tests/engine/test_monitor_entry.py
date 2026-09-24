@@ -36,6 +36,15 @@ def test_enter_skips_when_manual_or_paused(conn):
     assert b.placed == []
 
 
+def test_enter_skips_a_direction_switched_off_after_the_scan(conn):
+    """Unticking bull puts mid-cycle wins over a decision the scan already passed."""
+    b = f.FakeBroker()
+    s = db.get_settings(conn)
+    db.put_settings(conn, {"directions": ["SELL_CALL"]})
+    assert monitor.enter(conn, f.decision(), s, f.services(b), f.NOW) == "skipped: bull puts are switched off"
+    assert b.placed == []
+
+
 def test_enter_respects_one_slot(conn):
     b = f.FakeBroker()
     s = db.get_settings(conn)

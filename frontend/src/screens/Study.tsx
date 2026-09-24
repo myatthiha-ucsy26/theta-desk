@@ -13,6 +13,8 @@ import {
   type SignalMode,
   type StreamLog as LogLine,
 } from "../lib/api";
+import { DEMO } from "../lib/demo/flag";
+import { DemoEventSource } from "../lib/demo/stream";
 import { parseStreamEvent } from "../lib/stream";
 import { useTemplate } from "../lib/templates";
 import { formatDate } from "../lib/time";
@@ -47,6 +49,13 @@ const PRIMARY_BUTTON =
 type Run = "signal" | "backtest";
 type Backtest = { stats: BacktestStats; trades: BacktestTrade[] };
 
+/** What a run is read from: the server's event stream, or the demo desk's playback of one. */
+type RunSource = {
+  addEventListener(type: string, fn: (ev: Event) => void): void;
+  close(): void;
+  onerror: ((ev: Event) => void) | null;
+};
+
 export function Study({ ticker: tickerParam, dte: dteParam }: { ticker?: string; dte?: string }) {
   const [ticker, setTicker] = useState(() => (tickerParam ?? "").toUpperCase());
   const [dte, setDte] = useState(() => parseDte(dteParam));
@@ -71,7 +80,7 @@ export function Study({ ticker: tickerParam, dte: dteParam }: { ticker?: string;
     sizeButton.current?.focus();
   }, []);
 
-  const source = useRef<EventSource | null>(null);
+  const source = useRef<RunSource | null>(null);
   const closeSource = () => {
     source.current?.close();
     source.current = null;
@@ -117,11 +126,9 @@ export function Study({ ticker: tickerParam, dte: dteParam }: { ticker?: string;
       setBacktest(null);
     }
 
-    const es = new EventSource(
-      kind === "signal"
-        ? api.signalStreamUrl(ticker, dte, selected)
-        : api.backtestStreamUrl(ticker, dte, selected),
-    );
+    const url = kind === "signal" ? api.signalStreamUrl(ticker, dte, selected) : api.backtestStreamUrl(ticker, dte, selected);
+    // The demo desk plays a run back from its simulated book instead of opening a stream.
+    const es = DEMO ? new DemoEventSource(url) : new EventSource(url);
     source.current = es;
 
     const handle = (type: string) => (ev: Event) => {

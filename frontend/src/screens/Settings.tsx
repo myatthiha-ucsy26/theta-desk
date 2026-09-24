@@ -27,6 +27,11 @@ const MODES: { key: SignalMode; label: string }[] = [
   { key: "trend", label: "Trend" },
 ];
 
+const DIRECTIONS: { key: SettingsData["directions"][number]; label: string }[] = [
+  { key: "SELL_PUT", label: "Bull put" },
+  { key: "SELL_CALL", label: "Bear call" },
+];
+
 // The setting that switches each gate. Signal and spread fits have none: without them there is no trade.
 const GATE_SWITCH: Partial<Record<(typeof GATES)[number]["stage"], keyof SettingsData>> = {
   edge: "edge_enabled",
@@ -72,6 +77,15 @@ const PREVIEW: Record<TemplateId, ReactNode> = {
       <span className="mt-1.5 block h-px w-full bg-rule" />
       <span className="mt-2 block h-1.5 w-1/3 bg-profit" />
     </>
+  ),
+  holo: (
+    <span className="flex flex-1 items-center gap-1.5">
+      <span className="holo-thumb-orb block h-5 w-5 shrink-0 rounded-full" />
+      <span className="flex flex-1 flex-col gap-1">
+        <span className="block h-1.5 w-full rounded-sm border border-rule bg-sheet" />
+        <span className="block h-1.5 w-2/3 rounded-sm bg-profit" />
+      </span>
+    </span>
   ),
 };
 
@@ -425,6 +439,17 @@ export function Settings() {
     setDraft((d) => (d ? { ...d, [key]: value } : d));
   }
 
+  /** The backtested default tickers, filled into the draft like any other edit — nothing else resets. */
+  async function fillDefaultTickers() {
+    try {
+      const { watchlist: defaults } = await api.settingsDefaults();
+      setWatchlist(defaults.join(", "));
+      update("watchlist", defaults);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   /**
    * Choosing an endpoint also re-picks the model, because the list belongs to the endpoint: a
    * name the old provider served would be a 400 from the new one, and it would look like the
@@ -636,7 +661,12 @@ export function Settings() {
                 }
                 className={`mt-1.5 w-full max-w-lg font-display text-lg ${INPUT}`}
               />
-              <p className="mt-1.5 text-xs text-ink-2">Separate tickers with commas or spaces.</p>
+              <p className="mt-1.5 flex max-w-lg flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs text-ink-2">
+                Separate tickers with commas or spaces.
+                <button type="button" onClick={fillDefaultTickers} className="text-accent underline-offset-2 hover:underline">
+                  Use default tickers
+                </button>
+              </p>
             </div>
 
             <fieldset>
@@ -655,6 +685,25 @@ export function Settings() {
               </div>
               <p className="mt-1.5 text-xs text-ink-2">
                 A signal fires when any checked mode fires. ivrich held up in the 2022 bear market; trend did not.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend className={LABEL}>Spread types</legend>
+              <div className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5">
+                {DIRECTIONS.map((d) => (
+                  <label key={d.key} className="flex items-center gap-1.5 text-sm text-ink">
+                    <input
+                      type="checkbox"
+                      checked={draft.directions.includes(d.key)}
+                      onChange={() => update("directions", toggled(draft.directions, d.key))}
+                    />
+                    {d.label}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-ink-2">
+                An unticked side stops at the signal gate. In the backtest, bull puts carried the edge; bear calls mostly did not.
               </p>
             </fieldset>
 

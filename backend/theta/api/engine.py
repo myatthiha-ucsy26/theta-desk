@@ -37,11 +37,21 @@ def api_scan_now():
 
 @bp.route("/api/scan/latest")
 def api_scan_latest():
+    """The board: the newest decision for each ticker and DTE Settings still scans.
+
+    Rows for a ticker or DTE since dropped from Settings would otherwise stay on the
+    board indefinitely and read as if they were still being scanned. They remain in
+    the journal.
+    """
     conn = ctx().connect()
     try:
-        return jsonify(db.latest_per_ticker(conn))
+        settings = db.get_settings(conn)
+        rows = db.latest_per_ticker(conn)
     finally:
         conn.close()
+    watchlist, dtes = set(settings["watchlist"]), set(settings["dtes"])
+    return jsonify([r for r in rows
+                    if r["decision"]["ticker"] in watchlist and r["decision"]["dte"] in dtes])
 
 
 @bp.route("/api/scan/clear", methods=["POST"])

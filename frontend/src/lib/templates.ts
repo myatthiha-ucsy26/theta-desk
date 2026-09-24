@@ -1,13 +1,18 @@
 // Which template the desk is set in — the look, not the behaviour. Remembered like the theme.
 import { useSyncExternalStore } from "react";
+import { forceTheme } from "./theme";
 
-export type TemplateId = "broadsheet" | "minimal";
+export type TemplateId = "broadsheet" | "minimal" | "holo";
 
 /** The templates on offer, in the order the picker lists them. The first is the default. */
 export const TEMPLATES: { id: TemplateId; label: string }[] = [
   { id: "broadsheet", label: "Template 1 · Broadsheet" },
   { id: "minimal", label: "Template 2 · Minimal" },
+  { id: "holo", label: "Template 3 · Holo" },
 ];
+
+/** Holo is neon on deep navy: it has no day edition, so it holds the page dark. */
+const DARK_ONLY: TemplateId[] = ["holo"];
 
 export const DEFAULT_TEMPLATE: TemplateId = TEMPLATES[0].id;
 
@@ -34,11 +39,13 @@ let current: TemplateId =
 function apply(id: TemplateId) {
   current = id;
   document.documentElement.dataset.template = id;
+  forceTheme(DARK_ONLY.includes(id) ? "dark" : null);
   listeners.forEach((l) => l());
 }
 
 if (typeof window !== "undefined") {
   document.documentElement.dataset.template = current;
+  if (DARK_ONLY.includes(current)) forceTheme("dark");
 }
 
 export function setTemplate(id: TemplateId) {

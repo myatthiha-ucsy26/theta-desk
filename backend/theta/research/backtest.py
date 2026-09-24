@@ -1,8 +1,10 @@
 """Backtest engine: Black-Scholes reconstruction of credit spreads over price history.
 
 Reuses strategy (same signal logic as live) and pricing (BS). No historical option
-chain needed: IV is estimated from realized vol (conservative). Hold-to-expiration,
-cash-settle intrinsic, one open position per ticker at a time.
+chain needed: IV is estimated from realized vol (conservative). One open position per
+ticker at a time. By default a spread is held to expiration and cash-settled at
+intrinsic; with tp_pct / sl_multiple it is marked at each daily close (Black-Scholes at
+the entry IV) and closed early under the same rules the live monitor applies.
 
 Run:  ./.venv/bin/python backtest.py --tickers SPY,QQQ,META,NVDA --years 2
 """
@@ -10,7 +12,7 @@ import argparse
 import pandas as pd
 
 from theta import strategy as cc
-from theta.market.pricing import bs_price, bs_delta, estimate_iv, strike_for_delta
+from theta.market.pricing import bs_price, bs_delta, estimate_iv, spread_value, strike_for_delta
 from theta.market import data as market_data
 from theta import stats
 
@@ -56,8 +58,50 @@ def legs_for_side(spot, T, r, iv, side, step):
     return ks
 
 
+def fixed_width(legs, direction, width, target_delta=0.30):
+    """The short leg nearest target delta and a long leg exactly `width` further out, as a
+    spread dict shaped like build_spread's, or None. The bot's own spread shape."""
+    if not legs:
+        return None
+    short = min(legs, key=lambda L: abs(abs(L["delta"]) - target_delta))
+    want = short["strike"] - width if direction == cc.SELL_PUT else short["strike"] + width
+    long = next((L for L in legs if abs(L["strike"] - want) < 1e-6), None)
+    if long is None or short["price"] - long["price"] <= 0:
+        return None
+    credit = short["price"] - long["price"]
+    return {"short_strike": short["strike"], "long_strike": long["strike"], "width": width,
+            "credit": credit, "max_loss": (width - credit) * 100}
+
+
+def _exit(sp, direction, closes, dates, t, j, expires, iv, r, tp_pct, sl_multiple):
+    """(bar index, reason, debit per share) at which the spread is closed.
+
+    Marks at each close before the settlement bar; the take profit and the stop use the
+    same thresholds as autotrade.tp_price and autotrade.sl_breached.
+    """
+    credit = sp["credit"]
+    if tp_pct is not None or sl_multiple is not None:
+        for k in range(t + 1, j):
+            T = max((expires - dates[k]).days, 0) / 365.0
+            mark = spread_value(closes[k], sp["short_strike"], sp["long_strike"], T, r, iv, direction)
+            if tp_pct is not None and mark <= credit * (1 - tp_pct / 100):
+                return k, "tp", mark
+            if sl_multiple is not None and mark >= credit * (1 + sl_multiple):
+                return k, "sl", mark
+    s_exp = closes[j]
+    if direction == cc.SELL_PUT:
+        owed = max(sp["short_strike"] - s_exp, 0) - max(sp["long_strike"] - s_exp, 0)
+    else:
+        owed = max(s_exp - sp["short_strike"], 0) - max(s_exp - sp["long_strike"], 0)
+    return j, "expiry", min(max(owed, 0), sp["width"])
+
+
 def run_backtest(ticker, df, modes, dte, target_delta=0.30, max_risk=500.0,
-                 iv_factor=1.15, r=0.04, warmup=60, slippage=0.0):
+                 iv_factor=1.15, r=0.04, warmup=60, slippage=0.0,
+                 tp_pct=None, sl_multiple=None, width=None):
+    """width=None builds the widest spread within max_risk (build_spread); a number builds
+    the bot's fixed-width spread instead. slippage is charged on the credit and again on
+    any early buy-back (an expiring spread settles, with nothing to cross)."""
     closes = df["close"].tolist()
     highs = df["high"].tolist()
     lows = df["low"].tolist()
@@ -87,7 +131,10 @@ def run_backtest(ticker, df, modes, dte, target_delta=0.30, max_risk=500.0,
         side = "put" if direction == cc.SELL_PUT else "call"
         step = strike_step(spot)
         legs = legs_for_side(spot, T, r, iv, side, step)
-        sp = cc.build_spread(legs, direction, target_delta, max_risk)
+        if width is None:
+            sp = cc.build_spread(legs, direction, target_delta, max_risk)
+        else:
+            sp = fixed_width(legs, direction, width, target_delta)
         if not sp:
             continue
 
@@ -96,13 +143,11 @@ def run_backtest(ticker, df, modes, dte, target_delta=0.30, max_risk=500.0,
         j = next((x for x in range(t + 1, len(dates)) if dates[x] >= target_date), None)
         if j is None:
             continue
-        s_exp = closes[j]
-        if side == "put":
-            owed = max(sp["short_strike"] - s_exp, 0) - max(sp["long_strike"] - s_exp, 0)
-        else:
-            owed = max(s_exp - sp["short_strike"], 0) - max(s_exp - sp["long_strike"], 0)
-        owed = min(max(owed, 0), sp["width"])
-        pnl = (sp["credit"] - slippage - owed) * 100  # slippage = credit haircut $/share
+        x, why, debit = _exit(sp, direction, closes, dates, t, j, target_date, iv, r,
+                              tp_pct, sl_multiple)
+        if why != "expiry":
+            debit += slippage
+        pnl = (sp["credit"] - slippage - debit) * 100  # slippage = $/share haircut per crossing
         contracts = max(1, int(max_risk / sp["max_loss"]))
         pnl_total = round(pnl * contracts, 2)
 
@@ -114,8 +159,9 @@ def run_backtest(ticker, df, modes, dte, target_delta=0.30, max_risk=500.0,
             "credit": round(sp["credit"], 2), "max_loss": round(sp["max_loss"], 0),
             "contracts": contracts,
             "pnl": pnl_total, "win": pnl_total > 0,
+            "exit": why, "exit_date": dates[x].date(),
         })
-        open_until = dates[j]
+        open_until = dates[x]
     return trades
 
 

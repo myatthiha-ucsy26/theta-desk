@@ -171,6 +171,40 @@ def test_gate3_blocks_when_no_firing_mode_has_edge():
     assert "ivrich" in d["reason"] and "meanrev" in d["reason"]
 
 
+SIDED_EDGE = {("ivrich", 14, "high"): {
+    "n": 712, "expectancy": 19.1, "win_rate": 0.82,
+    "sides": {"SELL_PUT": {"n": 318, "expectancy": 45.3, "win_rate": 0.84},
+              "SELL_CALL": {"n": 394, "expectancy": -1.7, "win_rate": 0.80}}}}
+
+
+def test_gate3_blocks_a_bear_call_whose_side_has_no_edge():
+    """The pooled cell is positive only because of its bull puts."""
+    d = scan.scan_ticker("META", 14, settings(directions=["SELL_PUT", "SELL_CALL"]),
+                         deps(edge_table=SIDED_EDGE, evaluate=lambda *a: signal("SELL_CALL")))
+    assert (d["stage"], d["passed"]) == ("edge", False)
+    assert "bear call" in d["reason"] and "no edge" in d["reason"]
+
+
+def test_gate3_passes_a_bull_put_on_its_own_side_stats():
+    d = scan.scan_ticker("META", 14, settings(), deps(edge_table=SIDED_EDGE))
+    assert d["passed"] is True
+    assert d["edge"] == ["ivrich/14d/IV-high bull put: expectancy $+45.3/trade over 318 trades"]
+    assert d["confidence"]["n"] == 318 and d["confidence"]["win_rate"] == 0.84
+
+
+def test_signal_gate_blocks_a_direction_switched_off_in_settings():
+    d = scan.scan_ticker("META", 14, settings(directions=["SELL_PUT"]),
+                         deps(evaluate=lambda *a: signal("SELL_CALL")))
+    assert (d["stage"], d["passed"]) == ("signal", False)
+    assert d["direction"] == "SELL_CALL"
+    assert d["reason"] == "bear call signal, but bear calls are switched off in settings"
+
+
+def test_signal_gate_passes_a_direction_that_is_on():
+    d = scan.scan_ticker("META", 14, settings(directions=["SELL_PUT"]), deps())
+    assert d["passed"] is True
+
+
 def test_gate3_ignores_modes_that_did_not_fire():
     """trend is checked but says NO_TRADE, so its missing backtest data must not block."""
     s = settings(modes=["ivrich", "trend"])

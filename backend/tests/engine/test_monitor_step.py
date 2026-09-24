@@ -40,7 +40,7 @@ def test_fill_records_credit_places_gtc_tp_and_tells_telegram(conn):
     t = opened(conn, b, svc, credit=0.58)
     assert (t["state"], t["credit"], t["fees"], t["tp_tif"]) == ("open", 0.58, 1.0, "GTC")
     tp = b.placed[-1]
-    assert (tp["opening"], tp["price"], tp["gtc"], tp["order_id"]) == (False, 0.29, True, t["tp_order_id"])
+    assert (tp["opening"], tp["price"], tp["gtc"], tp["order_id"]) == (False, 0.12, True, t["tp_order_id"])  # 80% of 0.58 taken
     assert "Opened" in svc["sent"][-1] and "731/726" in svc["sent"][-1]
 
 
@@ -185,3 +185,35 @@ def test_one_failing_trade_does_not_stop_the_others_and_step_reports_it(conn):
     svc["quotes"] = lambda codes: (_ for _ in ()).throw(RuntimeError("OpenD disconnected"))
     with pytest.raises(RuntimeError, match="OpenD disconnected"):
         monitor.step(conn, db.get_settings(conn), svc, later(1))
+
+
+def _cancel_stays_pending(b):
+    """moomoo accepted the cancel but has not confirmed it yet: the order is still working."""
+    b.cancel = lambda oid: b.cancelled.append(oid)
+
+
+def test_a_reprice_that_did_not_happen_is_not_recorded_on_entry(conn):
+    b = f.FakeBroker()
+    svc = f.services(b, quotes=lambda codes: {f.SHORT: {"bid": 2.70, "ask": 2.92}, f.LONG: {"bid": 2.20, "ask": 2.22}})
+    t = entered(conn, b, svc)
+    b.fail_reprice = True
+    _cancel_stays_pending(b)
+    monitor.step(conn, db.get_settings(conn), svc, later(1))
+    after = db.get_live_trade(conn, t["id"])
+    assert (after["entry_price"], after["entry_reprices"]) == (t["entry_price"], 0)
+    assert b.orders[after["entry_order_id"]]["price"] == t["entry_price"]
+
+
+def test_a_reprice_that_did_not_happen_is_not_recorded_on_close(conn):
+    b = f.FakeBroker()
+    svc = f.services(b, quotes=breach)
+    t = opened(conn, b, svc)
+    for i in (1, 2):
+        monitor.step(conn, db.get_settings(conn), svc, later(i))
+    closing = db.get_live_trade(conn, t["id"])
+    assert closing["state"] == "closing"
+    b.fail_reprice = True
+    _cancel_stays_pending(b)
+    monitor.step(conn, db.get_settings(conn), svc, later(3))
+    after = db.get_live_trade(conn, t["id"])
+    assert (after["close_price"], after["close_reprices"]) == (closing["close_price"], 0)

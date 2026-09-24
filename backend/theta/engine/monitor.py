@@ -18,6 +18,7 @@ from theta.engine import autotrade as at
 from theta import strategy as cc
 from theta.storage import db
 from theta.engine import scan
+from theta.engine import edge
 from theta.broker.client import DEAD, FILLED, BrokerError, REMARK_PREFIX
 
 
@@ -68,6 +69,8 @@ def enter(conn, decision, settings, services, now):
         settings = {**settings, "bot_paused": True, "bot_pause_reason": latest["bot_pause_reason"]}
     if settings["mode"] != "auto":
         return "skipped: auto mode is off"
+    if direction not in latest["directions"]:
+        return f"skipped: {edge.SIDE_NAMES[direction]}s are switched off"
     side = "put" if direction == cc.SELL_PUT else "call"
     try:
         legs = services["legs"](ticker, signal["expiration"], side, signal["spot"])
@@ -154,16 +157,19 @@ def step(conn, settings, services, now):
 
 
 def _reprice(conn, t, order_id, price, opening, services, now):
-    """Move a working order to price. Returns the order id to track, or None if it filled.
+    """Move a working order to price. Returns (order id to track, whether it is now at
+    price); the id is None if the order filled.
 
     If moomoo will not modify the combo, cancel it and send a fresh one -- unless the
-    cancel reveals a fill, in which case the next pass books it.
+    cancel reveals a fill, in which case the next pass books it. A cancel still pending
+    or a replacement that was rejected leaves the order where it was, so the caller must
+    not record the new price.
     """
     b = services["broker"]
     try:
         b.reprice(order_id, price, t["contracts"])
         db.log_order_event(conn, iso(now), "reprice", "sent", t["id"], order_id, price)
-        return order_id
+        return order_id, True
     except BrokerError as e:
         db.log_order_event(conn, iso(now), "reprice", "failed", t["id"], order_id, price, str(e))
     try:
@@ -172,18 +178,18 @@ def _reprice(conn, t, order_id, price, opening, services, now):
         pass
     o = b.order(order_id)
     if o["status"] == FILLED:
-        return None
+        return None, False
     if o["status"] not in DEAD:
-        return order_id   # cancel still pending; decide next pass
+        return order_id, False   # cancel still pending; decide next pass
     action = "place_entry" if opening else "place_close"
     try:
         new_id = b.place_spread(t["short_code"], t["long_code"], opening, price, t["contracts"],
                                 f"{REMARK_PREFIX}{t['id']}")
     except BrokerError as e:
         on_broker_error(conn, services, now, e, action, t["id"], price)
-        return order_id   # dead; the next pass handles it
+        return order_id, False   # dead; the next pass handles it
     db.log_order_event(conn, iso(now), action, "sent", t["id"], new_id, price)
-    return new_id
+    return new_id, True
 
 
 def _step_entering(conn, t, settings, services, now):
@@ -200,8 +206,8 @@ def _step_entering(conn, t, settings, services, now):
     new_price = at.next_entry_price(t["entry_price"], _prices(t, services)["natural_credit"])
     if new_price is None:
         return _cancel_entry(conn, t, settings, services, now)
-    order_id = _reprice(conn, t, t["entry_order_id"], new_price, True, services, now)
-    if order_id is not None:
+    order_id, moved = _reprice(conn, t, t["entry_order_id"], new_price, True, services, now)
+    if moved:
         db.update_live_trade(conn, t["id"], entry_order_id=order_id, entry_price=new_price,
                                 entry_reprices=t["entry_reprices"] + 1)
 
@@ -325,8 +331,8 @@ def _step_closing(conn, t, settings, services, now):
             return on_broker_error(conn, services, now, e, "place_close", t["id"], price)
         db.log_order_event(conn, iso(now), "place_close", "sent", t["id"], oid, price)
     else:
-        oid = _reprice(conn, t, t["close_order_id"], price, False, services, now)
-        if oid is None:
+        oid, moved = _reprice(conn, t, t["close_order_id"], price, False, services, now)
+        if not moved:
             return
     reprices = t["close_reprices"] + 1
     db.update_live_trade(conn, t["id"], close_order_id=oid, close_price=price, close_reprices=reprices)

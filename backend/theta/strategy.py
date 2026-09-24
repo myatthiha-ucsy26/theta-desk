@@ -180,10 +180,10 @@ def _ivrich(ind):
     ratio = iv / rv if rv > 0 else 0.0
     gate = (rank >= IV_RANK_RICH) if rank is not None else (ratio > 1.2)
     if not gate:
-        tag = f"IV rank {rank:.2f}" if rank is not None else f"IV/RV={ratio:.2f}"
+        tag = f"vol rank {rank:.2f}" if rank is not None else f"IV/RV={ratio:.2f}"
         return NO_TRADE, f"IV not rich ({tag})"
     d, r = _meanrev(ind)
-    tag = f"IV rank {rank:.2f}" if rank is not None else f"IV/RV={ratio:.2f}"
+    tag = f"vol rank {rank:.2f}" if rank is not None else f"IV/RV={ratio:.2f}"
     if d == NO_TRADE:
         return NO_TRADE, f"IV rich ({tag}) but no mean-rev signal"
     return d, f"IV rich ({tag}) + {r}"

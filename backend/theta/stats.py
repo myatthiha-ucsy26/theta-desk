@@ -1,8 +1,9 @@
 """Pure statistics shared by the live path and the backtest. No IO.
 
-The single definition of "rank" in this project. Both market_data.iv_rank (logged ATM
-IV) and backtest.iv_rank_at (realized vol proxy) must route through here, so a
-rank threshold means the same thing live as it did in the backtest.
+The single definition of "rank" in this project. The live signal and the backtest
+both rank the same input too -- the 20-day realised vol's percentile over a year,
+via backtest.iv_rank_at -- because no free history of option IV exists to
+backtest on, so a threshold measured on RV only means something when applied to RV.
 """
 
 

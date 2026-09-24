@@ -22,7 +22,7 @@ import { setTemplate } from "../lib/templates";
 
 const desk: SettingsData = {
   engine_enabled: false, mode: "manual", account_mode: "paper", paper_starting_cash: 10000, paper_fee_per_contract: 0.65, watchlist: ["SPY", "QQQ", "META"],
-  modes: ["ivrich"], dtes: [7, 14], interval_min: 15, ticker_gap_sec: 5,
+  modes: ["ivrich"], directions: ["SELL_PUT", "SELL_CALL"], dtes: [7, 14], interval_min: 15, ticker_gap_sec: 5,
   market_hours_only: true, edge_min_n: 10, edge_min_expectancy: 0,
   max_open_positions: 5, max_deployed_risk: 2500, ai_enabled: true,
   edge_enabled: true, risk_enabled: true, dedupe_enabled: true,

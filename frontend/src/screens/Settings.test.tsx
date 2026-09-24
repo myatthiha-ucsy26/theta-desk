@@ -5,6 +5,7 @@ import type { AiProvider, BotStatus, Learn as LearnData, PaperBook, Settings as 
 const settings = vi.fn();
 const saveSettings = vi.fn();
 const resetSettings = vi.fn();
+const settingsDefaults = vi.fn();
 const learn = vi.fn();
 const aiProviders = vi.fn();
 const paper = vi.fn();
@@ -20,6 +21,7 @@ vi.mock("../lib/api", async () => {
       settings: () => settings(),
       saveSettings: (updates: Partial<SettingsData>) => saveSettings(updates),
       resetSettings: () => resetSettings(),
+      settingsDefaults: () => settingsDefaults(),
       learn: (days: number) => learn(days),
       aiProviders: () => aiProviders(),
       paper: () => paper(),
@@ -42,7 +44,7 @@ import { Settings } from "./Settings";
 
 const saved: SettingsData = {
   engine_enabled: false, mode: "manual", account_mode: "paper", paper_starting_cash: 10000, paper_fee_per_contract: 0.65, watchlist: ["SPY", "QQQ", "META"],
-  modes: ["ivrich"], dtes: [7, 14], interval_min: 15, ticker_gap_sec: 5,
+  modes: ["ivrich"], directions: ["SELL_PUT", "SELL_CALL"], dtes: [7, 14], interval_min: 15, ticker_gap_sec: 5,
   market_hours_only: true, edge_min_n: 10, edge_min_expectancy: 0,
   max_open_positions: 5, max_deployed_risk: 2500, ai_enabled: true,
   edge_enabled: true, risk_enabled: true, dedupe_enabled: true,
@@ -87,6 +89,7 @@ beforeEach(() => {
   settings.mockReset();
   saveSettings.mockReset();
   resetSettings.mockReset();
+  settingsDefaults.mockReset();
   learn.mockReset();
   aiProviders.mockReset();
   paper.mockReset();
@@ -106,6 +109,24 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("Settings", () => {
+  it("puts the default tickers back in the watchlist, and saves nothing else", async () => {
+    const defaults = ["SPY", "QQQ", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "AMD"];
+    settingsDefaults.mockResolvedValue({ watchlist: defaults });
+    saveSettings.mockResolvedValue({ ...saved, watchlist: defaults });
+    render(<Settings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use default tickers" }));
+
+    const box = screen.getByRole("textbox", { name: "Watchlist" }) as HTMLTextAreaElement;
+    await waitFor(() => expect(box.value).toBe(defaults.join(", ")));
+    // Filled in, not saved: it goes through Save like any other edit.
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(resetSettings).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ watchlist: defaults }));
+  });
+
   it("switches gates on and off, keeping signal and spread always on", async () => {
     saveSettings.mockResolvedValue({ ...saved, edge_enabled: false, dedupe_enabled: false });
     render(<Settings />);
@@ -191,6 +212,19 @@ describe("Settings", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ dtes: [7, 14, 30] }));
+  });
+
+  it("saves bull puts only when bear calls are unticked", async () => {
+    saveSettings.mockResolvedValue({ ...saved, directions: ["SELL_PUT"] });
+    render(<Settings />);
+
+    const put = (await screen.findByRole("checkbox", { name: "Bull put" })) as HTMLInputElement;
+    const call = screen.getByRole("checkbox", { name: "Bear call" }) as HTMLInputElement;
+    expect(put.checked && call.checked).toBe(true);
+
+    fireEvent.click(call);
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ directions: ["SELL_PUT"] }));
   });
 
   it("won't add a duplicate or out-of-range expiration", async () => {
@@ -521,5 +555,22 @@ describe("Settings in the Minimal template", () => {
     // The cap card is still there — it just has nothing to show against the cap.
     expect(screen.getByText("Allocated")).toBeDefined();
     expect(screen.getAllByText("—")).toHaveLength(2);
+  });
+});
+describe("Settings design picker", () => {
+  afterEach(() => setTemplate("broadsheet"));
+
+  it("offers all three templates and switches to Holo", async () => {
+    render(<Settings />);
+
+    const holo = await screen.findByRole("button", { name: /Template 3 · Holo/ });
+    expect(screen.getByRole("button", { name: /Template 1 · Broadsheet/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Template 2 · Minimal/ })).toBeDefined();
+    expect(holo.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(holo);
+
+    expect(document.documentElement.dataset.template).toBe("holo");
+    expect(document.documentElement.dataset.theme).toBe("dark");
   });
 });

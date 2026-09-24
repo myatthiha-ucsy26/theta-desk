@@ -819,3 +819,307 @@ body {
     scrollbar-color: var(--rule-strong) transparent;
   }
 }
+/* ── Template 3 · Holo ────────────────────────────────────────────────────────────────────
+   A trading command centre in deep navy: glass panels float over the page on real shadows, the
+   accent runs electric blue to violet, and growth reads green to cyan. Dark only — neon and
+   glass have nothing to glow against on a white page — so the tokens answer to any data-theme,
+   and the second selector outranks the Broadsheet night tokens on :root.
+   Every text colour holds >= 4.5:1 on the glass at its lightest, over the violet glow. */
+[data-template="holo"],
+[data-template="holo"][data-theme] {
+  color-scheme: dark;
+  --face-sans: "Inter", system-ui, sans-serif;
+  --face-display: "Space Grotesk", system-ui, sans-serif;
+  --face-mono: "JetBrains Mono", ui-monospace, monospace;
+  --paper: #060a14;
+  --sheet: rgb(20 30 55 / 0.5);
+  --well: rgb(10 16 32 / 0.7);
+  --ink: #e6ecff;
+  --ink-2: #94a3c8;
+  --rule: rgb(120 160 255 / 0.18);
+  --rule-strong: rgb(120 160 255 / 0.34);
+  --profit: #34d399;
+  --loss: #fb7185;
+  --accent: #22d3ee;
+  --accent-soft: rgb(34 211 238 / 0.14);
+  --good: #34d399;
+  --warn: #fbbf24;
+  --critical: #fb7185;
+  --holo-blue: #3b82f6;
+  --holo-violet: #a855f7;
+  --glass-blur: 14px;
+  --shadow-sheet: 0 0 0 1px var(--rule), 0 18px 40px -18px rgb(0 0 0 / 0.8);
+  --shadow-lift: 0 0 0 1px var(--rule-strong), 0 30px 60px -20px rgb(0 0 0 / 0.85),
+    0 0 40px -10px rgb(99 102 241 / 0.35);
+  --radius: 6px;
+  --radius-lg: 14px;
+}
+
+/* The page: navy under a violet dawn at the top and a cyan one at the far corner, with a
+   perspective grid fading in from the bottom — the floor the whole desk stands on. */
+[data-template="holo"] body {
+  background:
+    radial-gradient(90% 55% at 50% -10%, rgb(76 29 149 / 0.45), transparent 70%),
+    radial-gradient(60% 50% at 100% 100%, rgb(8 145 178 / 0.18), transparent 70%),
+    var(--paper);
+  background-attachment: fixed;
+}
+[data-template="holo"] .holo-page { position: relative; isolation: isolate; }
+[data-template="holo"] .holo-page::before {
+  content: "";
+  position: fixed;
+  inset: auto -20% -10% -20%;
+  height: 55vh;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgb(59 130 246 / 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(59 130 246 / 0.4) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform: perspective(500px) rotateX(62deg);
+  transform-origin: bottom;
+  mask-image: linear-gradient(to top, #000, transparent 85%);
+}
+
+/* Type: structural heads in Space Grotesk, every number in mono. */
+[data-template="holo"] .eyebrow { font-family: var(--face-mono); letter-spacing: 0.1em; }
+[data-template="holo"] .figure,
+[data-template="holo"] .num { font-family: var(--face-mono); letter-spacing: -0.02em; }
+[data-template="holo"] table { font-family: var(--face-mono); font-size: 12px; }
+[data-template="holo"] .rule-nameplate { border-top: 0; }
+[data-template="holo"] .rule-heavy { border-top-color: var(--rule-strong); }
+
+/* Extruded heads: two stacked dark-violet layers under the letterforms, then a soft glow. */
+[data-template="holo"] .holo-extrude,
+[data-template="holo"] .panel-title {
+  text-shadow: 0 1px 0 #312e81, 0 2px 0 #1e1b4b, 0 4px 0 #0f0c2e, 0 8px 18px rgb(0 0 0 / 0.6),
+    0 0 24px rgb(99 102 241 / 0.35);
+}
+
+/* Glass: a frosted panel held by a gradient keyline, floating on a real shadow. */
+[data-template="holo"] .panel,
+[data-template="holo"] .holo-readout,
+[data-template="holo"] .ledger-card,
+[data-template="holo"] .stat-tile,
+[data-template="holo"] .stat-card,
+[data-template="holo"] .pos-card,
+[data-template="holo"] .scan-card {
+  position: relative;
+  background: linear-gradient(160deg, rgb(40 55 100 / 0.5), var(--sheet) 45%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sheet), inset 0 1px 0 rgb(255 255 255 / 0.07);
+  transition: box-shadow 400ms cubic-bezier(0.22, 1, 0.36, 1), border-color 400ms ease;
+}
+[data-template="holo"] .panel {
+  padding: 0;
+  overflow: hidden;
+  transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 400ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 400ms ease;
+}
+/* A panel lifts straight up rather than leaning: nothing moves sideways, so no edge leaves the page. */
+[data-template="holo"] .panel:hover,
+[data-template="holo"] .holo-readout:hover { transform: translateY(-3px); }
+[data-template="holo"] .holo-readout {
+  transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 400ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 400ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-template="holo"] .panel:hover,
+  [data-template="holo"] .holo-readout:hover { transform: none; }
+}
+[data-template="holo"] .panel-head {
+  align-items: center;
+  border-bottom: 1px solid var(--rule);
+  background: linear-gradient(90deg, rgb(59 130 246 / 0.1), rgb(168 85 247 / 0.06) 60%, transparent);
+  padding: 0.75rem 1.125rem;
+}
+[data-template="holo"] .panel-title { font-size: 16px; letter-spacing: 0; }
+[data-template="holo"] .panel-body { padding: 1.125rem; }
+[data-template="holo"] .stat-tile,
+[data-template="holo"] .stat-card,
+[data-template="holo"] .pos-card,
+[data-template="holo"] .scan-card { padding: 0.875rem 1rem; }
+/* Lifted: under the pointer a card answers with a deeper shadow and a brighter edge, so the
+   lift reads as depth, not as scale. */
+[data-template="holo"] .panel:hover,
+[data-template="holo"] .holo-readout:hover,
+[data-template="holo"] .pos-card:hover,
+[data-template="holo"] .scan-card:hover {
+  border-color: var(--rule-strong);
+  box-shadow: var(--shadow-lift), inset 0 1px 0 rgb(255 255 255 / 0.1);
+}
+[data-template="holo"] .ledger-band dl { gap: 0.75rem; }
+[data-template="holo"] .ledger-band h2 { border-bottom-width: 0; }
+
+/* Tables: a tinted head row, hairline rows, a cyan wash under the pointer. */
+[data-template="holo"] thead tr { background: var(--well); }
+[data-template="holo"] thead th { font-family: var(--face-mono); border-bottom: 1px solid var(--rule); }
+[data-template="holo"] tbody td { border-bottom: 1px solid var(--rule); }
+[data-template="holo"] tbody tr:hover { background: rgb(34 211 238 / 0.06); }
+
+/* Controls: soft corners, and a glow for focus rather than a hard ring. */
+[data-template="holo"] button,
+[data-template="holo"] input,
+[data-template="holo"] select,
+[data-template="holo"] textarea { border-radius: var(--radius); }
+[data-template="holo"] input,
+[data-template="holo"] select,
+[data-template="holo"] textarea { background-color: var(--well); }
+[data-template="holo"] .seg { border-radius: 0; }
+[data-template="holo"] .seg:first-child { border-top-left-radius: var(--radius); border-bottom-left-radius: var(--radius); }
+[data-template="holo"] .seg:last-child { border-top-right-radius: var(--radius); border-bottom-right-radius: var(--radius); }
+[data-template="holo"] .pill,
+[data-template="holo"] .chip { border-radius: 999px; }
+[data-template="holo"] :focus-visible { outline-color: var(--accent); box-shadow: 0 0 0 4px rgb(34 211 238 / 0.25); }
+[data-template="holo"] .meter-bar:not(.bg-critical),
+[data-template="holo"] .holo-meter {
+  background: linear-gradient(90deg, var(--holo-blue), var(--holo-violet));
+  box-shadow: 0 0 10px rgb(168 85 247 / 0.6);
+}
+[data-template="holo"] .meter-track { border-radius: 999px; }
+
+/* The nav: frosted glass pinned over whatever scrolls under it. */
+.holo-nav {
+  background: rgb(8 12 26 / 0.65);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border-bottom: 1px solid var(--rule);
+  box-shadow: 0 10px 30px -15px rgb(0 0 0 / 0.8);
+}
+.holo-mark { filter: drop-shadow(0 0 8px rgb(34 211 238 / 0.7)); }
+.holo-link {
+  border-radius: 999px;
+  color: var(--ink-2);
+  transition: color 200ms ease, background-color 200ms ease, box-shadow 200ms ease;
+}
+.holo-link:hover { color: var(--ink); background: rgb(120 160 255 / 0.08); }
+.holo-link[aria-current="page"] {
+  color: var(--ink);
+  background: linear-gradient(90deg, rgb(59 130 246 / 0.28), rgb(168 85 247 / 0.28));
+  box-shadow: inset 0 0 0 1px rgb(120 160 255 / 0.35), 0 0 18px -4px rgb(168 85 247 / 0.6);
+}
+.holo-link-icon { display: flex; transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+.holo-link:hover .holo-link-icon { transform: translateY(-2px) scale(1.08); }
+
+/* 3D glyphs sit on a shadow of their own, so they read as objects on the page. */
+.icon-3d { filter: drop-shadow(0 3px 3px rgb(0 0 0 / 0.55)) drop-shadow(0 0 6px rgb(99 102 241 / 0.3)); }
+
+/* The ticker tape: rising names glow. */
+[data-template="holo"] .tape-viewport,
+[data-template="holo"] .tape-track { font-family: var(--face-mono); }
+
+/* The orb, drawn in CSS: a lit sphere, up to three orbits, on a grid floor. */
+.holo-orb-slot { position: relative; }
+.holo-orb-stage {
+  position: relative;
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  perspective: 600px;
+  overflow: hidden;
+}
+.holo-orb {
+  --core: #8b5cf6;
+  --glow: #3b82f6;
+  position: relative;
+  z-index: 1;
+  width: 38%;
+  max-width: 110px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #e0e7ff 0%, var(--core) 28%, #1e1b4b 78%);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--glow) 70%, transparent),
+    0 0 90px color-mix(in srgb, var(--glow) 40%, transparent), inset -10px -14px 30px rgb(0 0 0 / 0.6);
+  animation: holo-bob 6s ease-in-out infinite;
+}
+.holo-orb-profit { --core: #22d3ee; --glow: #10b981; }
+.holo-orb-loss { --core: #fb7185; --glow: #be123c; }
+.holo-orb-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid #22d3ee;
+  animation: holo-orbit 8s linear infinite;
+}
+.holo-orb-ring-1 { inset: -20%; }
+.holo-orb-ring-2 { inset: -36%; border-color: rgb(168 85 247 / 0.7); animation-duration: 12s; animation-direction: reverse; }
+.holo-orb-ring-3 { inset: -52%; border-color: rgb(52 211 153 / 0.5); animation-duration: 16s; }
+.holo-floor {
+  position: absolute;
+  inset: auto -30% -20% -30%;
+  height: 60%;
+  background-image:
+    linear-gradient(rgb(59 130 246 / 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(59 130 246 / 0.4) 1px, transparent 1px);
+  background-size: 26px 26px;
+  transform: perspective(300px) rotateX(62deg);
+  mask-image: linear-gradient(to top, #000 10%, transparent 90%);
+}
+@keyframes holo-orbit {
+  from { transform: rotateX(72deg) rotateZ(0deg); }
+  to { transform: rotateX(72deg) rotateZ(360deg); }
+}
+@keyframes holo-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .holo-orb, .holo-orb-ring { animation: none; }
+  .holo-orb-ring { transform: rotateX(72deg); }
+}
+
+/* The picker's thumbnail of this template. */
+.holo-thumb-orb {
+  background: radial-gradient(circle at 35% 30%, #c4b5fd, #7c3aed 40%, #1e3a8a);
+  box-shadow: 0 0 8px rgb(124 58 237 / 0.7);
+}
+.holo-orb-slot { --halo-core: rgb(124 58 237 / 0.45); --halo-edge: rgb(59 130 246 / 0.18); }
+.holo-tone-profit { --halo-core: rgb(16 185 129 / 0.4); --halo-edge: rgb(34 211 238 / 0.18); }
+.holo-tone-loss { --halo-core: rgb(225 29 72 / 0.4); --halo-edge: rgb(251 113 133 / 0.15); }
+/* The orb's halo is light on the page behind the canvas, not geometry in it: soft to the edge,
+   and in the tone the orb is lit with. */
+.holo-orb-slot::before {
+  content: "";
+  position: absolute;
+  inset: 12% 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--halo-core), var(--halo-edge) 45%, transparent 70%);
+  filter: blur(18px);
+  pointer-events: none;
+}
+/* A light fill (a pressed toggle, the primary button) takes its text in "sheet", which here is
+   translucent glass and would wash out; give it solid navy instead. */
+[data-template="holo"] .bg-ink.text-sheet { color: #0b1020; box-shadow: 0 0 16px -4px rgb(230 236 255 / 0.5); }
+/* The nav scrolls sideways on a phone; the swipe is enough, the bar is noise. */
+.holo-nav ul { scrollbar-width: none; }
+.holo-nav ul::-webkit-scrollbar { display: none; }
+.holo-link-icon .icon-3d { width: 24px; height: 24px; }
+
+/* ── Demo desk (./demo.sh) ─────────────────────────────────────────────────────────────────
+   Every figure is simulated, and the page says so twice: a badge in words at the head of the
+   status line, and a watermark across the whole window that no screenshot can crop out. */
+.demo-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  background: #f59e0b;
+  color: #1c1204;
+  font-family: var(--face-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.demo-watermark {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='220'%3E%3Ctext x='50%25' y='50%25' fill='rgb(128 128 128 / 0.11)' font-family='Arial, sans-serif' font-size='44' font-weight='700' letter-spacing='6' text-anchor='middle' dominant-baseline='middle' transform='rotate(-24 180 110)'%3EDEMO%3C/text%3E%3C/svg%3E");
+  background-repeat: repeat;
+}

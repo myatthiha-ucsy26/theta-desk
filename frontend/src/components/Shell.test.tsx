@@ -119,3 +119,44 @@ describe("Shell in the Minimal template", () => {
     expect(within(nav).getByRole("link", { name: /^Scan\b/ }).querySelector(".rail-dot")).toBeNull();
   });
 });
+
+describe("Shell in the Holo template", () => {
+  it("names the desk once, marks the section you are on, and has no theme switch", async () => {
+    setTemplate("holo");
+    render(<Shell screen="scan"><p>content</p></Shell>);
+
+    const nav = await screen.findByRole("navigation", { name: "Screens" });
+    expect(within(nav).getByRole("link", { name: "Scan" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getAllByRole("heading", { name: "Theta Desk" })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Theta Desk" }).getAttribute("href")).toBe(hrefFor("scan"));
+    // Holo is dark only: a switch that did nothing would be a lie.
+    expect(screen.queryByRole("switch", { name: "Dark mode" })).toBeNull();
+    expect(screen.getByText("content")).toBeTruthy();
+  });
+
+  it("sets a 3D glyph beside each section, and no two alike", async () => {
+    setTemplate("holo");
+    render(<Shell screen="study"><p>content</p></Shell>);
+
+    const nav = await screen.findByRole("navigation", { name: "Screens" });
+    const glyphs = within(nav).getAllByRole("link").map((l) => l.querySelector("svg.icon-3d"));
+    expect(glyphs.every((g) => g !== null)).toBe(true);
+    expect(new Set(glyphs.map((g) => g?.innerHTML)).size).toBe(glyphs.length);
+  });
+
+  it("carries the holo band, with the book's figures, on Scan and Manage only", async () => {
+    setTemplate("holo");
+    for (const s of ["scan", "manage"] as const) {
+      const { unmount } = render(<Shell screen={s}><p>content</p></Shell>);
+      expect(await screen.findByRole("group", { name: "Paper book" })).toBeTruthy();
+      expect(screen.getByRole("group", { name: "Real account · moomoo" })).toBeTruthy();
+      unmount();
+    }
+    for (const s of ["learn", "study", "settings"] as const) {
+      const { unmount } = render(<Shell screen={s}><p>content</p></Shell>);
+      await screen.findByRole("navigation", { name: "Screens" });
+      expect(screen.queryByRole("group", { name: "Paper book" })).toBeNull();
+      unmount();
+    }
+  });
+});
