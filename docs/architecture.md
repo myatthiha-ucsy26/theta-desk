@@ -29,7 +29,7 @@ foundation; the subpackages are grouped by what each one talks to.
 |---|---|---|
 | `config` | Reads `.env` into the environment at startup | filesystem |
 | `paths` | Where the database and caches live | — |
-| `stats` | Percentile rank; the one definition of "rank" | — |
+| `stats` | Percentile rank; the one definition of "rank" (20-day realised vol, ranked over a year) | — |
 | `strategy` | Indicators, gate verdicts, spread construction | — |
 | `signals` | A live signal: market data through the gates | market, strategy |
 | `paper` | Marking a book to model | market |
@@ -129,6 +129,33 @@ needs the second step.
 Klines and IV history are cached to disk under `klines_cache/` and `iv_history/`.
 Both are derived from OpenD and safe to delete; they are not source and are not
 tracked.
+
+The kline cache holds completed bars only. Today's bar is still forming, so it is
+never written or returned. A request that reaches before the cache's first bar
+refetches from the earlier date, so a short request (the 120 days the paper book
+marks from) can never shrink the five years the edge table needs. A cache
+refreshed today counts as current, which stops a pre-market scan from going back
+to OpenD on every call.
+
+`iv_history/` is a record of ATM IV. Nothing gates on it: the live `ivrich` gate
+and the edge table both rank realised vol, because that is the only history
+available to backtest on.
+
+### The edge table
+
+The runner rebuilds the edge table from a pooled backtest every 24 hours, when a
+configured DTE has no cells, or when the exit rules change. The backtest replays
+the bot's own trade: a 5-wide spread, closed at the `tp_pct` take profit or the
+`sl_multiple` stop, marked at each daily close, otherwise held to expiry. Every
+cell records the rules it was measured under (`runner.exit_rules`). A table
+stored before rules were recorded fails that check and is rebuilt.
+
+### The risk gate
+
+`runner.open_risk` gives the risk gate everything open in the active account:
+notebook positions plus the bot's entering, open and closing spreads. It is
+re-read before every scan in a cycle, so an entry the bot made earlier in the
+same cycle counts against the position and deployed-risk caps.
 
 ## Running it
 

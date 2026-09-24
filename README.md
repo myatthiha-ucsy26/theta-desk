@@ -14,7 +14,7 @@ live account and the same code places real orders through moomoo OpenD.
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white">
   <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white">
   <img alt="SQLite" src="https://img.shields.io/badge/SQLite-stdlib-003B57?logo=sqlite&logoColor=white">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-987-success">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-1064-success">
 </p>
 
 Everything runs on your own machine. There is no hosted component, no account
@@ -90,7 +90,7 @@ server-sent events.
 | pandas | 3.0 | Kline frames come out of OpenD as DataFrames |
 | futu-api | 10.10 | The moomoo OpenD client, for both quotes and orders |
 | SQLite | stdlib | One file, transactional, no daemon. No ORM; the schema is small and the queries are hand-written |
-| pytest | 9.1 | 570 tests, none of which touch the network |
+| pytest | 9.1 | 612 tests, none of which touch the network |
 | mcp | 2.2 | Optional: exposes the market-data tools over MCP |
 
 **Frontend**
@@ -102,7 +102,7 @@ server-sent events.
 | Vite | 8 | Dev server with an `/api` proxy; builds to static assets Flask serves |
 | Tailwind | 4.3 | Layout and tokens |
 | Three.js + React Three Fiber | 0.186 | The IV and payoff surfaces |
-| Vitest / Testing Library | 5.0 / 16.3 | 417 tests across 39 files |
+| Vitest / Testing Library | 5.0 / 16.3 | 452 tests across 44 files |
 
 No state-management library, no component library, no CSS-in-JS. The logic
 lives in plain functions under `src/lib/` and is tested directly.
@@ -318,7 +318,7 @@ headless and the tests never need a request context.
 
 **Every side effect is injected.** The scan pipeline and the monitor take their
 IO as a dict of callables, so the entire decision path runs offline against
-fakes. That's why 570 backend tests finish in under four seconds and none of
+fakes. That's why 612 backend tests finish in seconds and none of
 them can accidentally reach OpenD or fire a real order.
 
 **Process state is passed in, not reached for.** The database path, broker
@@ -530,8 +530,8 @@ theta-desk/
 ## Testing
 
 ```bash
-cd backend  && .venv/bin/python -m pytest      # 570 tests
-cd frontend && npm test                        # 417 tests, 39 files
+cd backend  && .venv/bin/python -m pytest      # 612 tests
+cd frontend && npm test                        # 452 tests, 44 files
 ```
 
 Both run automatically in `run.sh` before the server starts.
@@ -547,8 +547,8 @@ drift, paper results stop saying anything about live.
 | Path | What | Tracked? |
 |---|---|---|
 | `data/engine.db` | Positions, paper trades, settings, journal, edge table | No |
-| `klines_cache/` | Daily bars per ticker | No |
-| `iv_history/` | ATM IV per ticker per day | No |
+| `klines_cache/` | Completed daily bars per ticker; grows, never shrinks | No |
+| `iv_history/` | ATM IV per ticker per day, a record only; nothing gates on it | No |
 | `.env` | Your credentials | **No** |
 | `frontend/dist/` | The UI build | No |
 

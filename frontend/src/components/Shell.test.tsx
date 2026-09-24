@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -121,6 +121,11 @@ describe("Shell in the Minimal template", () => {
 });
 
 describe("Shell in the Holo template", () => {
+  // Shell lazy-loads HoloShell (motion library + WebGL orb). Cold, that import can take
+  // longer than findByRole's 1s wait while the whole suite runs in parallel; load it once
+  // here so no test depends on how busy the machine is.
+  beforeAll(() => import("./holo/HoloShell"), 30_000);
+
   it("names the desk once, marks the section you are on, and has no theme switch", async () => {
     setTemplate("holo");
     render(<Shell screen="scan"><p>content</p></Shell>);

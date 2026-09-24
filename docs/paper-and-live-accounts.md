@@ -82,6 +82,11 @@ could otherwise total simulated and real money together takes `account` as a
 **required keyword argument** — forgetting it is a `TypeError`, not a silently
 wrong number.
 
+The scan's risk gate reads both tables for the active account: notebook
+`positions` and the bot's active `live_trades`. Reading `positions` alone would
+leave the position and deployed-risk caps blind to the bot's own spreads in auto
+mode.
+
 The column defaults (`'live'` on `live_trades`, `'paper'` on `positions`) exist
 for migration only: rows written before this change are exactly what those
 defaults say they are.
