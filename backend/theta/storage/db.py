@@ -1,0 +1,598 @@
+"""SQLite storage for the engine. stdlib sqlite3 only, no ORM.
+
+One file holds positions, settings, the decision journal, alert history and the
+nightly edge table. Writes are transactional, so a trade cannot be lost to a
+read-modify-write race between a request and the engine thread.
+
+Every function takes an open connection, so callers (Flask requests, the engine
+thread, tests) each own their connection and nothing is shared across threads.
+"""
+import json
+import os
+import sqlite3
+
+from theta.infra import paths
+
+DEFAULT_PATH = os.path.join(paths.DATA, "engine.db")
+
+_POSITION_FIELDS = [
+    "id", "account", "ticker", "direction", "short_strike", "long_strike", "width", "credit",
+    "contracts", "entry_date", "expiry", "mode", "status", "close_date", "close_pnl",
+]
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS positions (
+    id TEXT PRIMARY KEY,
+    account TEXT NOT NULL DEFAULT 'paper',
+    ticker TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    short_strike REAL NOT NULL,
+    long_strike REAL NOT NULL,
+    width REAL NOT NULL,
+    credit REAL NOT NULL,
+    contracts INTEGER NOT NULL,
+    entry_date TEXT NOT NULL,
+    expiry TEXT NOT NULL,
+    mode TEXT,
+    status TEXT NOT NULL,
+    close_date TEXT,
+    close_pnl REAL,
+    entry_context TEXT
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS journal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    dte INTEGER NOT NULL,
+    stage TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    direction TEXT,
+    reason TEXT,
+    payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS journal_ticker_dte ON journal (ticker, dte, id);
+
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
+    ts TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS alerts_key_ts ON alerts (key, ts);
+
+CREATE TABLE IF NOT EXISTS edge_stats (
+    mode TEXT NOT NULL,
+    dte INTEGER NOT NULL,
+    bucket TEXT NOT NULL,
+    stats TEXT NOT NULL,
+    built_at TEXT NOT NULL,
+    PRIMARY KEY (mode, dte, bucket)
+);
+
+CREATE TABLE IF NOT EXISTS live_trades (
+    id TEXT PRIMARY KEY,
+    account TEXT NOT NULL DEFAULT 'live',
+    ticker TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    expiry TEXT NOT NULL,
+    short_code TEXT NOT NULL,
+    long_code TEXT NOT NULL,
+    short_strike REAL NOT NULL,
+    long_strike REAL NOT NULL,
+    width REAL NOT NULL,
+    contracts INTEGER NOT NULL,
+    planned_credit REAL NOT NULL,
+    state TEXT NOT NULL,
+    entry_order_id TEXT,
+    entry_price REAL,
+    entry_reprices INTEGER NOT NULL DEFAULT 0,
+    credit REAL,
+    tp_order_id TEXT,
+    tp_tif TEXT,
+    sl_hits INTEGER NOT NULL DEFAULT 0,
+    close_order_id TEXT,
+    close_price REAL,
+    close_reprices INTEGER NOT NULL DEFAULT 0,
+    exit_reason TEXT,
+    close_debit REAL,
+    fees REAL NOT NULL DEFAULT 0,
+    pnl REAL,
+    ai_reason TEXT,
+    last_ai_check TEXT,
+    opened_at TEXT NOT NULL,
+    filled_at TEXT,
+    closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS live_trades_state ON live_trades (state, opened_at);
+
+CREATE TABLE IF NOT EXISTS paper_orders (
+    order_id TEXT PRIMARY KEY,
+    short_code TEXT NOT NULL,
+    long_code TEXT NOT NULL,
+    opening INTEGER NOT NULL,
+    price REAL NOT NULL,
+    qty INTEGER NOT NULL,
+    remark TEXT NOT NULL,
+    status TEXT NOT NULL,
+    dealt_qty REAL NOT NULL DEFAULT 0,
+    fill_price REAL,
+    fees REAL NOT NULL DEFAULT 0,
+    placed_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    trade_id TEXT,
+    action TEXT NOT NULL,
+    order_id TEXT,
+    price REAL,
+    status TEXT NOT NULL,
+    reason TEXT
+);
+"""
+
+SIGNAL_MODES = ("meanrev", "trend", "ivrich")
+
+# Expirations are scanned at any DTE in this range; 7 and 14 are only the defaults.
+DTE_MIN, DTE_MAX = 1, 365
+
+# Engine off and manual by default: nothing scans or alerts until switched on.
+# modes defaults to ivrich only -- in the 5-year backtest it held up in the 2022
+# bear market, while trend's edge disappeared. Replayed under the bot's own exits
+# (27 tickers, 2021-09..2026-09), ivrich bull puts at 7 DTE with an 80% take profit
+# earned $53.5/trade over 346 trades; bear calls $27, and 14 DTE lost most of its edge
+# when IV was priced at RV rather than RV x 1.15.
+DEFAULT_SETTINGS = {
+    "engine_enabled": False,
+    # Whether the bot runs at all.
+    "mode": "manual",
+    # Which broker it runs against. "paper" simulates fills from live quotes and
+    # touches no money; "live" places real orders through OpenD.
+    "account_mode": "paper",
+    # Five years of history each, a positive IV-rich backtest at 7 and 14 DTE through the 2022
+    # bear market, and weekly options deep enough to fill a two-leg spread.
+    "watchlist": ["SPY", "QQQ", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "AMD"],
+    "modes": ["ivrich"],
+    # Which spreads a signal may become. Unticking one stops that side at the
+    # signal gate, before any quote or AI call is spent on it.
+    "directions": ["SELL_PUT"],
+    "dtes": [7],
+    "interval_min": 15,
+    "ticker_gap_sec": 5,
+    "market_hours_only": True,
+    # Gate switches. Signal and spread-fits always run; auto mode forces risk and AI on.
+    "edge_enabled": True,
+    "risk_enabled": True,
+    "dedupe_enabled": True,
+    "edge_min_n": 100,
+    "edge_min_expectancy": 0.0,
+    "max_open_positions": 5,
+    "max_deployed_risk": 2500.0,
+    "ai_enabled": True,
+    "ai_allow_caution": True,
+    "alert_cooldown_hours": 24,
+    # Credentials. Empty means "not set here", and the environment (.env) answers instead, so a
+    # headless run is unaffected. AppContext.credential_env lays these over os.environ.
+    "ai_api_key": "",
+    "ai_api_endpoint": "",
+    "ai_model": "",
+    "telegram_bot_token": "",
+    "telegram_chat_id": "",
+    # Live autotrade, used only while mode is "auto". The stop fires when buying the
+    # spread back costs credit x (1 + sl_multiple): 2.0 closes at 3x the credit, a loss
+    # of twice the credit. A 50% take profit gave up $15-18/trade against 80%.
+    "tp_pct": 80.0,
+    "sl_multiple": 2.0,
+    "min_credit": 0.30,
+    "bot_paused": False,
+    "bot_pause_reason": "",
+    # Paper account. The fee is charged per leg per contract, on entry and again
+    # on exit: without it a 50% take-profit on a $0.30 credit reads far better on
+    # paper than it can be live.
+    "paper_starting_cash": 10000.0,
+    "paper_fee_per_contract": 0.65,
+}
+
+ACCOUNT_MODES = ("paper", "live")
+DIRECTIONS = ("SELL_PUT", "SELL_CALL")
+
+
+# The database holds the AI key and the Telegram token in clear text, so it is
+# kept readable only by the user who owns it. The directory too: a mode on the
+# file alone still lets anyone list what is beside it.
+FILE_MODE = 0o600
+DIR_MODE = 0o700
+
+
+def _restrict(path):
+    """Take away group and other access, on the database and its directory.
+
+    Applied on every connect rather than at creation: a database restored from a
+    backup, copied from another machine or created before this existed would
+    otherwise keep whatever mode it arrived with.
+    """
+    directory = os.path.dirname(path)
+    for target, mode in ((directory, DIR_MODE), (path, FILE_MODE)):
+        try:
+            if os.path.exists(target) and (os.stat(target).st_mode & 0o777) != mode:
+                os.chmod(target, mode)
+        except OSError:
+            pass  # a read-only mount or a foreign owner is not worth failing a scan over
+
+
+def connect(path=None):
+    """Open a connection. WAL mode lets the engine thread write while requests read."""
+    path = path or DEFAULT_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    conn = sqlite3.connect(path, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    _restrict(path)
+    return conn
+
+
+# Columns added after a table shipped. CREATE TABLE IF NOT EXISTS does nothing to
+# a table that already exists, so these are applied by hand on every open.
+_ADDED_COLUMNS = (
+    ("positions", "account", "TEXT NOT NULL DEFAULT 'paper'"),
+    ("live_trades", "account", "TEXT NOT NULL DEFAULT 'live'"),
+)
+
+
+def _migrate(conn):
+    """Add columns a previously created database is missing.
+
+    The defaults are what the existing rows already are: everything in
+    positions was hand-recorded paper, everything in live_trades was real.
+    """
+    for table, column, decl in _ADDED_COLUMNS:
+        have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if have and column not in have:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.commit()
+
+
+def init(conn):
+    """Create any missing tables and columns. Safe to call on every connection."""
+    conn.executescript(_SCHEMA)
+    conn.commit()
+    _migrate(conn)
+
+
+def _position_row(row):
+    d = {k: row[k] for k in _POSITION_FIELDS}
+    d["entry_context"] = json.loads(row["entry_context"]) if row["entry_context"] else None
+    return d
+
+
+def insert_position(conn, trade):
+    """Insert a position dict. Raises ValueError if the id already exists.
+
+    `account` is required: the column default exists for rows written before
+    accounts did, not for new ones.
+    """
+    if not trade.get("account"):
+        raise ValueError("position needs an account")
+    values = [trade.get(k) for k in _POSITION_FIELDS]
+    ctx = trade.get("entry_context")
+    values.append(json.dumps(ctx) if ctx is not None else None)
+    cols = ", ".join(_POSITION_FIELDS + ["entry_context"])
+    marks = ", ".join("?" for _ in values)
+    try:
+        conn.execute(f"INSERT INTO positions ({cols}) VALUES ({marks})", values)
+    except sqlite3.IntegrityError as e:
+        raise ValueError(f"position {trade.get('id')} already exists") from e
+    conn.commit()
+
+
+def list_positions(conn, *, account, status=None):
+    """One account's positions, oldest entry first, optionally filtered by status.
+
+    `account` is required rather than defaulted: totalling a simulated book and a
+    funded one together is the kind of mistake that should not be one keyword
+    away.
+    """
+    sql = "SELECT * FROM positions WHERE account = ?"
+    args = [account]
+    if status is not None:
+        sql += " AND status = ?"
+        args.append(status)
+    rows = conn.execute(sql + " ORDER BY entry_date, id", args).fetchall()
+    return [_position_row(r) for r in rows]
+
+
+def close_position(conn, position_id, close_date, close_pnl):
+    """Close an OPEN position. Returns False if it is missing or already closed.
+
+    The status check lives in the UPDATE itself, so a retry or a race can never
+    overwrite a P&L that was already realized.
+    """
+    cur = conn.execute(
+        "UPDATE positions SET status = 'closed', close_date = ?, close_pnl = ? "
+        "WHERE id = ? AND status = 'open'",
+        (close_date, close_pnl, position_id),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def get_settings(conn):
+    """Stored settings merged over the defaults."""
+    out = {k: (list(v) if isinstance(v, list) else v) for k, v in DEFAULT_SETTINGS.items()}
+    for row in conn.execute("SELECT key, value FROM settings"):
+        if row["key"] in out:
+            out[row["key"]] = json.loads(row["value"])
+    return out
+
+
+def _validate(key, value):
+    if key not in DEFAULT_SETTINGS:
+        raise ValueError(f"unknown setting: {key}")
+    default = DEFAULT_SETTINGS[key]
+    if isinstance(default, bool):
+        ok = isinstance(value, bool)
+    elif isinstance(default, float):
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif isinstance(default, int):
+        ok = isinstance(value, int) and not isinstance(value, bool)
+    elif isinstance(default, list):
+        ok = isinstance(value, list)
+    else:
+        ok = isinstance(value, type(default))
+    if not ok:
+        raise ValueError(f"{key} must be {type(default).__name__}")
+    if key == "mode" and value not in ("manual", "auto"):
+        raise ValueError("mode must be 'manual' or 'auto'")
+    if key == "account_mode" and value not in ACCOUNT_MODES:
+        raise ValueError("account_mode must be 'paper' or 'live'")
+    if key == "paper_starting_cash" and value <= 0:
+        raise ValueError("paper_starting_cash must be above 0")
+    if key == "paper_fee_per_contract" and value < 0:
+        raise ValueError("paper_fee_per_contract cannot be negative")
+    if key == "tp_pct" and not 0 < value < 100:
+        raise ValueError("tp_pct must be between 0 and 100")
+    if key == "sl_multiple" and value <= 0:
+        raise ValueError("sl_multiple must be above 0")
+    if key == "min_credit" and value < 0.05:
+        raise ValueError("min_credit must be at least 0.05")
+    if key == "modes" and (not value or any(m not in SIGNAL_MODES for m in value)):
+        raise ValueError(f"modes must be a non-empty subset of {list(SIGNAL_MODES)}")
+    if key == "directions" and (not value or any(v not in DIRECTIONS for v in value)):
+        raise ValueError(f"directions must be a non-empty subset of {list(DIRECTIONS)}")
+    if key == "watchlist":
+        value = [str(t).strip().upper() for t in value if str(t).strip()]
+        if not value:
+            raise ValueError("watchlist must contain at least one ticker")
+    if key == "dtes":
+        if not value or any(not isinstance(d, int) or isinstance(d, bool) or not DTE_MIN <= d <= DTE_MAX
+                            for d in value):
+            raise ValueError(f"dtes must be a non-empty list of days between {DTE_MIN} and {DTE_MAX}")
+        value = sorted(set(value))
+    return value
+
+
+def put_settings(conn, updates):
+    """Validate every update first, then write them all. Returns the merged settings.
+
+    All-or-nothing: one bad key rejects the whole update, so settings are never
+    left half-applied.
+    """
+    clean = {k: _validate(k, v) for k, v in updates.items()}
+    for k, v in clean.items():
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (k, json.dumps(v)),
+        )
+    conn.commit()
+    return get_settings(conn)
+
+
+def reset_settings(conn):
+    """Forget every stored setting, returning to DEFAULT_SETTINGS."""
+    conn.execute("DELETE FROM settings")
+    conn.commit()
+    return get_settings(conn)
+
+
+# ---------------- journal ----------------
+# Timestamps are ISO-8601 UTC strings with a fixed format
+# ("2026-09-16T14:00:00+00:00"), so string comparison is time comparison.
+
+def log_decision(conn, decision, ts):
+    """Record one scan decision -- including rejections, and why."""
+    cur = conn.execute(
+        "INSERT INTO journal (ts, ticker, dte, stage, passed, direction, reason, payload) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (ts, decision["ticker"], decision["dte"], decision["stage"], int(bool(decision["passed"])),
+         decision.get("direction"), decision.get("reason"), json.dumps(decision, default=str)),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def _journal_row(row):
+    return {"id": row["id"], "ts": row["ts"], "decision": json.loads(row["payload"])}
+
+
+def recent_decisions(conn, limit=100):
+    """Newest decisions first."""
+    rows = conn.execute("SELECT * FROM journal ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [_journal_row(r) for r in rows]
+
+
+def latest_per_ticker(conn):
+    """The most recent decision for each (ticker, dte), sorted by ticker then dte."""
+    rows = conn.execute(
+        "SELECT j.* FROM journal j "
+        "JOIN (SELECT ticker, dte, MAX(id) AS id FROM journal GROUP BY ticker, dte) m "
+        "ON j.id = m.id ORDER BY j.ticker, j.dte"
+    ).fetchall()
+    return [_journal_row(r) for r in rows]
+
+
+def clear_journal(conn):
+    """Drop every logged decision. The engine keeps scanning; this only empties the board."""
+    cur = conn.execute("DELETE FROM journal")
+    conn.commit()
+    return cur.rowcount
+
+
+def decisions_since(conn, since_ts):
+    """Decisions at or after since_ts, oldest first."""
+    rows = conn.execute("SELECT * FROM journal WHERE ts >= ? ORDER BY id", (since_ts,)).fetchall()
+    return [_journal_row(r) for r in rows]
+
+
+# ---------------- alerts ----------------
+
+def record_alert(conn, key, ts):
+    conn.execute("INSERT INTO alerts (key, ts) VALUES (?, ?)", (key, ts))
+    conn.commit()
+
+
+def alerted_since(conn, key, since_ts):
+    """True if this alert key was sent at or after since_ts."""
+    row = conn.execute(
+        "SELECT 1 FROM alerts WHERE key = ? AND ts >= ? LIMIT 1", (key, since_ts)
+    ).fetchone()
+    return row is not None
+
+
+# ---------------- edge table ----------------
+
+def save_edge_table(conn, table, built_at):
+    """Replace the whole edge table with a new build, atomically."""
+    with conn:
+        conn.execute("DELETE FROM edge_stats")
+        conn.executemany(
+            "INSERT INTO edge_stats (mode, dte, bucket, stats, built_at) VALUES (?, ?, ?, ?, ?)",
+            [(m, d, b, json.dumps(stats), built_at) for (m, d, b), stats in table.items()],
+        )
+
+
+def load_edge_table(conn):
+    """(table keyed by (mode, dte, bucket), built_at) -- or ({}, None) if never built."""
+    rows = conn.execute("SELECT * FROM edge_stats").fetchall()
+    if not rows:
+        return {}, None
+    table = {(r["mode"], r["dte"], r["bucket"]): json.loads(r["stats"]) for r in rows}
+    return table, rows[0]["built_at"]
+
+
+# ---------------- live autotrade ----------------
+
+ACTIVE_STATES = ("entering", "open", "closing")
+
+_LIVE_FIELDS = [
+    "id", "account", "ticker", "direction", "expiry", "short_code", "long_code", "short_strike",
+    "long_strike", "width", "contracts", "planned_credit", "state", "entry_order_id",
+    "entry_price", "entry_reprices", "credit", "tp_order_id", "tp_tif", "sl_hits",
+    "close_order_id", "close_price", "close_reprices", "exit_reason", "close_debit",
+    "fees", "pnl", "ai_reason", "last_ai_check", "opened_at", "filled_at", "closed_at",
+]
+
+
+def insert_live_trade(conn, trade):
+    """Insert a bot trade. `account` is required: the column default exists for
+    rows written before accounts did, not for new ones."""
+    if not trade.get("account"):
+        raise ValueError("live trade needs an account")
+    cols = [k for k in _LIVE_FIELDS if k in trade]
+    conn.execute(
+        f"INSERT INTO live_trades ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+        [trade[k] for k in cols],
+    )
+    conn.commit()
+
+
+def update_live_trade(conn, trade_id, **fields):
+    unknown = (set(fields) - set(_LIVE_FIELDS)) | ({"id"} & set(fields))
+    if unknown:
+        raise ValueError(f"cannot update live_trades field(s): {', '.join(sorted(unknown))}")
+    sets = ", ".join(f"{k} = ?" for k in fields)
+    conn.execute(f"UPDATE live_trades SET {sets} WHERE id = ?", [*fields.values(), trade_id])
+    conn.commit()
+
+
+def get_live_trade(conn, trade_id):
+    row = conn.execute("SELECT * FROM live_trades WHERE id = ?", (trade_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def list_live_trades(conn, states=None, *, account):
+    sql = "SELECT * FROM live_trades WHERE account = ?"
+    args = [account]
+    if states is not None:
+        sql += f" AND state IN ({', '.join('?' for _ in states)})"
+        args += list(states)
+    return [dict(r) for r in conn.execute(sql + " ORDER BY opened_at, id", args).fetchall()]
+
+
+def open_live_trades_any_account(conn, account):
+    """Trades still live in `account`. Used to refuse switching away from it."""
+    return [dict(r) for r in conn.execute(
+        f"SELECT * FROM live_trades WHERE account = ? AND state IN "
+        f"({', '.join('?' for _ in ACTIVE_STATES)}) ORDER BY opened_at, id",
+        [account, *ACTIVE_STATES],
+    ).fetchall()]
+
+
+def log_order_event(conn, ts, action, status, trade_id=None, order_id=None, price=None, reason=None):
+    conn.execute(
+        "INSERT INTO order_events (ts, trade_id, action, order_id, price, status, reason) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (ts, trade_id, action, order_id, price, status, reason),
+    )
+    conn.commit()
+
+
+def recent_order_events(conn, limit=200):
+    rows = conn.execute("SELECT * FROM order_events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def consecutive_rejections(conn):
+    """How many of the most recent order placements were rejected, in a row."""
+    rows = conn.execute(
+        "SELECT status FROM order_events WHERE action LIKE 'place_%' ORDER BY id DESC LIMIT 50"
+    ).fetchall()
+    n = 0
+    for r in rows:
+        if r["status"] != "rejected":
+            break
+        n += 1
+    return n
+
+
+def bot_net_pnl(conn, since_ts=None, *, account):
+    sql = ("SELECT COALESCE(SUM(pnl), 0) AS total FROM live_trades "
+           "WHERE state = 'closed' AND account = ?")
+    args = [account]
+    if since_ts is not None:
+        sql += " AND closed_at >= ?"
+        args.append(since_ts)
+    return float(conn.execute(sql, args).fetchone()["total"])
+
+
+def bot_entries_since(conn, since_ts, *, account):
+    return conn.execute(
+        "SELECT COUNT(*) AS n FROM live_trades "
+        "WHERE state != 'entry_cancelled' AND opened_at >= ? AND account = ?",
+        (since_ts, account),
+    ).fetchone()["n"]
+
+
+def cancelled_since(conn, ticker, since_ts, *, account):
+    return conn.execute(
+        "SELECT COUNT(*) AS n FROM live_trades WHERE ticker = ? AND state = 'entry_cancelled' "
+        "AND opened_at >= ? AND account = ?",
+        (ticker.upper(), since_ts, account),
+    ).fetchone()["n"]

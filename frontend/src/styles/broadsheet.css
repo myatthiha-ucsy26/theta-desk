@@ -1,0 +1,120 @@
+/* Morning edition: warm newsprint and dark print inks. Every text colour checked at
+   >= 4.5:1 on --sheet. Profit and loss differ in lightness as well as hue, so a
+   red-green colour blindness still separates them (5.3:1 vs 8.5:1 against the page).
+   These are Template 1's tokens: the second selector lets a thumbnail be scoped back to
+   this template while another one is active. */
+:root,
+[data-template="broadsheet"] {
+  color-scheme: light;
+  --face-sans: "Libre Franklin", system-ui, sans-serif;
+  --face-display: "Newsreader", Georgia, serif;
+  --face-mono: "JetBrains Mono", ui-monospace, monospace;
+  --paper: #f7f4ee;
+  --sheet: #fffdf9;
+  --well: #efe9df;
+  --ink: #191713;
+  --ink-2: #6b6459;
+  --rule: #ddd6c9;
+  --rule-strong: #b8ae9c;
+  --profit: #26794f;
+  --loss: #8f2419;
+  --accent: #1c3f5c;
+  --good: #26794f;
+  --warn: #8a5a12;
+  --critical: #8f2419;
+  --shadow-sheet: 0 0 0 1px var(--rule);
+  --shadow-lift: 0 0 0 1px var(--rule-strong), 0 18px 36px -12px rgb(25 23 19 / 0.22);
+  /* Square by intent: a printed sheet has no soft corners. */
+  --radius: 0px;
+  --radius-lg: 0px;
+}
+
+/* Night edition: deep ink navy with paper-coloured text, so the 9:30 PM–4:00 AM
+   sessions are not read off a cold white glare. */
+:root[data-theme="dark"],
+[data-template="broadsheet"][data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0c1017;
+  --sheet: #10151e;
+  --well: #151c27;
+  --ink: #e8e3d9;
+  --ink-2: #9a958a;
+  --rule: #232a35;
+  --rule-strong: #38414f;
+  --profit: #6fd39b;
+  --loss: #e0776a;
+  --accent: #7db3dd;
+  --good: #6fd39b;
+  --warn: #d8a32e;
+  --critical: #e0776a;
+  --shadow-sheet: 0 0 0 1px var(--rule);
+  --shadow-lift: 0 0 0 1px var(--rule-strong), 0 18px 40px -12px rgb(0 0 0 / 0.6);
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--face-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  accent-color: var(--accent);
+}
+
+@layer base {
+  /* Figures set like a printed financial table: the sans face, tabular, no rules between rows
+     beyond a hairline. Mono is confined to .log, which really is terminal output. */
+  table { font-family: var(--face-sans); font-size: 0.8125rem; }
+  thead tr { background: transparent; }
+  thead th {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  tbody tr { transition: background-color 120ms; }
+  tbody tr:hover { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+  tbody td { border-bottom: 1px solid var(--rule); }
+  input, select, textarea { font-family: var(--face-sans); }
+  /* Tailwind 4's preflight dropped the hand cursor from buttons, so every control you can press
+     has to ask for it back — under the arrow a button reads as part of the page rather than
+     something to hit. Disabled ones are left out and keep the not-allowed cursor instead. */
+  button:not(:disabled) { cursor: pointer; }
+  ::selection { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+}
+
+@layer components {
+  /* The newspaper eyebrow: letterspaced caps over a figure. */
+  .eyebrow {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  /* A headline figure, set in the serif with lining tabular figures. */
+  .figure {
+    font-family: var(--face-display);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.005em;
+  }
+  /* Terminal output only. */
+  .log {
+    font-family: var(--face-mono);
+    font-size: 0.75rem;
+  }
+  /* Section and folio rules. A heavier rule opens a section, a hairline closes a head. */
+  .rule-heavy { border-top: 2px solid var(--ink); }
+  .rule-hair { border-top: 1px solid var(--rule); }
+  /* The masthead nameplate sits on a rule that is heavier than any other line on the page. */
+  .rule-nameplate { border-top: 3px double var(--ink); }
+  /* Numbers in a table column. */
+  .num { font-variant-numeric: tabular-nums lining-nums; text-align: right; }
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+

@@ -1,0 +1,38 @@
+/* The theme lives on <html data-theme>; utilities read these variables so every screen switches with it. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  /* The faces are looked up through --face-*, so a template can change the type as well as the
+     colour. Without the indirection Tailwind inlines the family into the utility and no
+     template could reach it. */
+  --font-sans: var(--face-sans);
+  --font-display: var(--face-display);
+  --font-mono: var(--face-mono);
+
+  --color-paper: var(--paper);       /* the page itself */
+  --color-sheet: var(--sheet);       /* a lifted reading surface: nav, tape, cards */
+  --color-well: var(--well);         /* recessed: table heads, inputs, meter tracks */
+  --color-ink: var(--ink);           /* primary text */
+  --color-ink-2: var(--ink-2);       /* secondary text, eyebrows, footnotes */
+  --color-rule: var(--rule);         /* hairlines */
+  --color-rule-strong: var(--rule-strong);
+  --color-profit: var(--profit);     /* credit, profit: text on paper */
+  --color-loss: var(--loss);
+  --color-accent: var(--accent);     /* press blue: links, focus, selection, IV ramp */
+  --color-good: var(--good);         /* status: always with glyph + word */
+  --color-warn: var(--warn);
+  --color-critical: var(--critical);
+
+  --animate-toast: toast-in 160ms ease-out;
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  --animate-drawer: drawer-in 180ms ease-out;
+  @keyframes drawer-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+}
+

@@ -1,0 +1,29 @@
+@import "tailwindcss";
+/* Broadsheet type: Newsreader is the headline serif, Libre Franklin the newsroom body face.
+   JetBrains Mono survives only for genuine terminal output (the log, the order log).
+   Neural Quant Terminal adds Space Grotesk for structural headings and Inter for interface
+   prose, and promotes JetBrains Mono to the face every number is read in. */
+@import "@fontsource/newsreader/400.css";
+@import "@fontsource/newsreader/500.css";
+@import "@fontsource/newsreader/600.css";
+@import "@fontsource/newsreader/700.css";
+@import "@fontsource/newsreader/400-italic.css";
+@import "@fontsource/libre-franklin/400.css";
+@import "@fontsource/libre-franklin/500.css";
+@import "@fontsource/libre-franklin/600.css";
+@import "@fontsource/libre-franklin/700.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+
+@import "./styles/base.css";
+@import "./styles/broadsheet.css";
+@import "./styles/minimal.css";
+@import "./styles/holo.css";
+@import "./styles/demo.css";
